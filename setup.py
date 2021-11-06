@@ -23,7 +23,7 @@ def read(*names, **kwargs):
 
 setup(
     name='pdiffutils',
-    version='0.0.0',
+    version='0.0.1',
     license='Apache-2.0',
     description='A small package for manipulating powder diffraction data',
     long_description='%s\n%s' % (
