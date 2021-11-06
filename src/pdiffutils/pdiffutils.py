@@ -12,6 +12,8 @@ import operator
 from math import sqrt
 
 
+print("hello")
+
 class XRayDataPoint:
     """
     This is an X-ray data point.
@@ -40,17 +42,17 @@ class XRayDataPoint:
         """
         Format the output of an XRayDataPoint to make it look nice.
         This is used primarily when printing DiffractionPatterns to a file.
-        
+
         dp_ refers to the number of decimal places you want to see for angle, intensity, or error
         lp_ refers to the left padding of the numbers, so that all the decimal points line up
-        
+
         For example:
         angle    = 45.368754896
         dp_angle = 5
         lp_angle = 4 ie 3 spaces allocated for digits, and one for a negative sign (if it exists)
         format(angle,f"{1+4+5}.{5}f") = '  45.36875'
-        
-        
+
+
         Parameters
         ----------
         dp_angle : int, optional
@@ -348,7 +350,7 @@ class XRayDataPoint:
 
     def _iadd_isub(self, other, operator):
         """
-        helper function 
+        helper function
         Overriding  += and -=  operator to mean adding intensities together if the same angle
         Can also add a float or int. This will increase the intensity, but not alter the error
 
@@ -788,7 +790,7 @@ class DiffractionPattern:
             neg.sort()
 
         return (pos, neg)
-        
+
 
 
     def _add_and(self, other, operator):
