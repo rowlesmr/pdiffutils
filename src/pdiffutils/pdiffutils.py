@@ -53,10 +53,7 @@ class XRayDataPoint:
     def __init__(self, angle, intensity, error=None):
         self.angle = angle
         self.intensity = intensity
-        if error is None:
-            self.error = math.sqrt(abs(self.intensity))
-        else:
-            self.error = abs(error)
+        self.error = math.sqrt(abs(self.intensity)) if error is None else abs(error)
 
     def negate(self):
         self.angle *= -1.0
@@ -168,7 +165,7 @@ class XRayDataPoint:
         ValueError if wrong type or angles not equal used.
 
         """
-        if not (isinstance(other, float) or isinstance(other, int)):
+        if not isinstance(other, (float, int)):
             raise TypeError(f"Multiplication with type {type(other)} is undefined.")
 
         return XRayDataPoint(self.angle,
@@ -193,7 +190,7 @@ class XRayDataPoint:
         ValueError if wrong type or angles not equal used.
 
         """
-        if not (isinstance(other, float) or isinstance(other, int)):
+        if not isinstance(other, (float, int)):
             return NotImplemented
 
         self.intensity *= other
@@ -219,7 +216,7 @@ class XRayDataPoint:
         ValueError if wrong type or angles not equal used.
 
         """
-        if not (isinstance(other, float) or isinstance(other, int)):
+        if not isinstance(other, (float, int)):
             raise TypeError(f"Division with type {type(other)} is undefined.")
 
         return XRayDataPoint(self.angle,
@@ -244,7 +241,7 @@ class XRayDataPoint:
         ValueError if wrong type or angles not equal used.
 
         """
-        if not (isinstance(other, float) or isinstance(other, int)):
+        if not isinstance(other, (float, int)):
             return NotImplemented
 
         self.intensity /= other
@@ -269,7 +266,7 @@ class XRayDataPoint:
         ValueError if wrong type or angles not equal used.
 
         """
-        if not (isinstance(other, float) or isinstance(other, int)):
+        if not isinstance(other, (float, int)):
             raise TypeError(f"Division with type {type(other)} is undefined.")
 
         return XRayDataPoint(self.angle,
@@ -294,7 +291,7 @@ class XRayDataPoint:
         ValueError if wrong type or angles not equal used.
 
         """
-        if not (isinstance(other, float) or isinstance(other, int)):
+        if not isinstance(other, (float, int)):
             return NotImplemented
 
         self.intensity //= other
@@ -317,7 +314,7 @@ class XRayDataPoint:
         None.
 
         """
-        if isinstance(other, float) or isinstance(other, int):
+        if isinstance(other, (float, int)):
             return XRayDataPoint(self.angle,
                                  operator(self.intensity, other),
                                  self.error)
@@ -397,19 +394,18 @@ class XRayDataPoint:
         ValueError if wrong type or angles not equal used.
 
         """
-        if isinstance(other, float) or isinstance(other, int):
+        if isinstance(other, (float, int)):
             self.intensity = operator(self.intensity, other)
             return self
 
         if not isinstance(other, XRayDataPoint):
             return NotImplemented
 
-        if self.angle == other.angle:
-            self.intensity = operator(self.intensity, other.intensity)
-            self.error = math.sqrt(self.error ** 2 + other.error ** 2)
-            return self
-        else:
+        if self.angle != other.angle:
             raise ValueError(f"Angles are not equal: {self.angle} & {other.angle}.")
+        self.intensity = operator(self.intensity, other.intensity)
+        self.error = math.sqrt(self.error ** 2 + other.error ** 2)
+        return self
 
     def __iadd__(self, other):
         """
@@ -510,12 +506,11 @@ class XRayDataPoint:
         if not isinstance(other, XRayDataPoint):
             return NotImplemented
 
-        if self == other:
-            self.intensity = (self.intensity + other.intensity) / 2
-            self.error = math.sqrt(self.error ** 2 + other.error ** 2) / 2
-            return self
-        else:
+        if self != other:
             raise ValueError(f"Angles are not equal: {self.angle} & {other.angle}.")
+        self.intensity = (self.intensity + other.intensity) / 2
+        self.error = math.sqrt(self.error ** 2 + other.error ** 2) / 2
+        return self
 
 
 # --------------------------------------------------------------------------------------------------
@@ -568,11 +563,7 @@ class DiffractionPattern:
             self.diffpat = self._readXYorXYE(data, aveStepSize)
 
         elif type(data) == list and all(isinstance(x, XRayDataPoint) for x in data):
-            if do_deep_copy:
-                self.diffpat = copy.deepcopy(data)
-            else:
-                self.diffpat = data
-
+            self.diffpat = copy.deepcopy(data) if do_deep_copy else data
             n = 0
             tot = 0
             for i in range(1, len(self.diffpat)):
@@ -602,11 +593,7 @@ class DiffractionPattern:
                 s = line.split()  # splits on whitespace
                 angle = float(s[0])
                 intensity = float(s[1])
-                if len(s) == 3:
-                    error = float(s[2])
-                else:
-                    error = None
-
+                error = float(s[2]) if len(s) == 3 else None
                 xdp = XRayDataPoint(angle, intensity, error)
 
                 self.angle_padding = max(self.angle_padding, len(str(round(xdp.angle))))
@@ -666,10 +653,7 @@ class DiffractionPattern:
         list of floats.
 
         """
-        r = []
-        for x in self.diffpat:
-            r.append(x.angle)
-        return r
+        return [x.angle for x in self.diffpat]
 
     def getIntensities(self):
         """
@@ -680,10 +664,7 @@ class DiffractionPattern:
         list of floats.
 
         """
-        r = []
-        for x in self.diffpat:
-            r.append(x.intensity)
-        return r
+        return [x.intensity for x in self.diffpat]
 
     def getErrors(self):
         """
@@ -694,19 +675,13 @@ class DiffractionPattern:
         list of floats.
 
         """
-        r = []
-        for x in self.diffpat:
-            r.append(x.error)
-        return r
+        return [x.error for x in self.diffpat]
 
     def __len__(self):
         return len(self.diffpat)
 
     def __str__(self):
-        s = ""
-        for d in self.diffpat:
-            s += str(d) + "\n"
-        return s
+        return "".join(str(d) + "\n" for d in self.diffpat)
 
     def __repr__(self):
         s = "DiffractionPattern[\n"
@@ -722,11 +697,10 @@ class DiffractionPattern:
 
     def writeToFile(self, filename, dp_angle=5, dp_intensity=3, dp_error=3):
         print(f"Writing to {os.path.abspath(filename)}.")
-        f = open(filename, "w")
-        for d in self.diffpat:
-            f.write(" " + d.format_output(dp_angle, dp_intensity, dp_error, self.angle_padding, self.intensity_padding,
-                                          self.error_padding) + "\n")
-        f.close()
+        with open(filename, "w") as f:
+            for d in self.diffpat:
+                f.write(" " + d.format_output(dp_angle, dp_intensity, dp_error,
+                                              self.angle_padding, self.intensity_padding, self.error_padding) + "\n")
 
     def trim(self, min_angle=-180, max_angle=180):
         """
@@ -958,7 +932,7 @@ class DiffractionPattern:
         ValueError if wrong type or angles not equal used.
 
         """
-        if not (isinstance(other, float) or isinstance(other, int)):
+        if not isinstance(other, (float, int)):
             raise TypeError(f"Multiplication with type {type(other)} is undefined.")
 
         r = copy.deepcopy(self.diffpat)
@@ -985,7 +959,7 @@ class DiffractionPattern:
         ValueError if wrong type or angles not equal used.
 
         """
-        if not (isinstance(other, float) or isinstance(other, int)):
+        if not isinstance(other, (float, int)):
             raise TypeError(f"Division with type {type(other)} is undefined.")
 
         r = copy.deepcopy(self.diffpat)
@@ -1012,7 +986,7 @@ class DiffractionPattern:
         ValueError if wrong type or angles not equal used.
 
         """
-        if not (isinstance(other, float) or isinstance(other, int)):
+        if not isinstance(other, (float, int)):
             raise TypeError(f"Division with type {type(other)} is undefined.")
 
         r = copy.deepcopy(self.diffpat)
@@ -1040,7 +1014,7 @@ class DiffractionPattern:
         ValueError if wrong type or angles not equal used.
 
         """
-        if isinstance(other, float) or isinstance(other, int):
+        if isinstance(other, (float, int)):
             r = copy.deepcopy(self.diffpat)
             for i in range(len(r)):
                 r[i] = r[i] + other
@@ -1075,7 +1049,7 @@ class DiffractionPattern:
         ValueError if wrong type or angles not equal used.
 
         """
-        if isinstance(other, float) or isinstance(other, int):
+        if isinstance(other, (float, int)):
             r = copy.deepcopy(self.diffpat)
             for i in range(len(r)):
                 r[i] = r[i] - other
@@ -1132,7 +1106,7 @@ class DiffractionPattern:
         ValueError if wrong type or angles not equal used.
 
         """
-        if isinstance(other, float) or isinstance(other, int):
+        if isinstance(other, (float, int)):
             for i in range(len(self.diffpat)):
                 self.diffpat[i] += other
             return self
@@ -1167,7 +1141,7 @@ class DiffractionPattern:
         ValueError if wrong type or angles not equal used.
 
         """
-        if isinstance(other, float) or isinstance(other, int):
+        if isinstance(other, (float, int)):
             for i in range(len(self.diffpat)):
                 self.diffpat[i] -= other
             return self
@@ -1219,7 +1193,7 @@ class DiffractionPattern:
         ValueError if wrong type or angles not equal used.
 
         """
-        if not (isinstance(other, float) or isinstance(other, int)):
+        if not isinstance(other, (float, int)):
             raise TypeError(f"Division with type {type(other)} is undefined.")
 
         for i in range(len(self.diffpat)):
@@ -1244,7 +1218,7 @@ class DiffractionPattern:
         ValueError if wrong type or angles not equal used.
 
         """
-        if not (isinstance(other, float) or isinstance(other, int)):
+        if not isinstance(other, (float, int)):
             raise TypeError(f"Division with type {type(other)} is undefined.")
 
         for i in range(len(self.diffpat)):
@@ -1313,15 +1287,10 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
 
         # Now I start the spline process
         start_index = 0
-        stop_index = 0
-        for i in range(1, len(dp_angle)):
+        for stop_index, i in enumerate(range(1, len(dp_angle)), start=1):
             step = dp_angle[i] - dp_angle[i - 1]
 
-            if step < step_threshold and i != len(dp_angle) - 1:
-                stop_index += 1
-            else:
-                stop_index += 1  # to make stop_index exclusive
-
+            if step >= step_threshold or i == len(dp_angle) - 1:
                 # this is the range of data I want to interpolate
                 #  I want to trim off a few datapoints either side of the module edge
                 #  so I don't have to deal with their noisy edges.
@@ -1342,13 +1311,12 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
 
                 start_index = stop_index
 
-        # assemble it all into a XDP list
-        r = []
-        for i in range(len(angle_spline)):
-            r.append(XRayDataPoint(angle_spline[i], intensity_spline[i], error_spline[i]))
+        return [
+            XRayDataPoint(angle_spline[i], intensity_spline[i], error_spline[i])
+            for i in range(len(angle_spline))
+        ]
 
-        return r
-
+    @staticmethod
     def spline2(interp, dp):
         """
         Interpolates a given DiffractionPattern using the provided interp array.
@@ -1374,8 +1342,6 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
             The interpolated data
 
         """
-        r = []
-
         angle = dp.getAngles()
         intensity = dp.getIntensities()
         error = dp.getErrors()
@@ -1385,19 +1351,16 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
             raise ValueError(f"Trying to interpolate out of range: {interp[0]} < {angle[0]}")
         elif interp[-1] > angle[-1]:  # ie I'm interpolating after the data ends
             raise ValueError(f"Trying to interpolate out of range: {interp[-1]} > {angle[-1]}")
-        else:
-            pass  # It's all good, mate!
-
         # interpolate intensity and error
         intensity_interp = InterpolatedDiffractionPattern.cubic_interp1d(interp, angle, intensity)
         error_interp = InterpolatedDiffractionPattern.cubic_interp1d(interp, angle, error)
 
-        # construct the diffpat
-        for i in range(len(interp)):
-            r.append(XRayDataPoint(interp[i], intensity_interp[i], error_interp[i]))
+        return [
+            XRayDataPoint(interp[i], intensity_interp[i], error_interp[i])
+            for i in range(len(interp))
+        ]
 
-        return r
-
+    @staticmethod
     def generateInterpList(min_start, max_stop, step):
         """
         Generate a list to use as the interpolation array.
@@ -1464,6 +1427,7 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
                 i += 1
         return lst
 
+    @staticmethod
     def cubic_interp1d(x0, x, y, do_checks=True):
         """
         Interpolate a 1-D function using cubic splines.
@@ -1478,12 +1442,10 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
         additional ref: www.math.uh.edu/~jingqiu/math4364/spline.pdf
         # original function code at: https://stackoverflow.com/a/48085583/36061
 
-
         This function is licenced under: Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0)
         https://creativecommons.org/licenses/by-sa/3.0/
         Original Author raphael valentin
         Date 3 Jan 2018
-
 
         Modifications made to remove numpy dependencies; all sub-functions by MR
 
@@ -1491,7 +1453,6 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
 
         Mod author: Matthew Rowles
         Date 3 May 2021
-
         """
         if do_checks:
             if len(x) != len(y):
@@ -1505,10 +1466,10 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
             """
             numpy.diff with default settings
             """
-            size = len(lst) - 1
-            r = [0] * size
-            for i in range(size):
-                r[i] = lst[i + 1] - lst[i]
+            dim = len(lst) - 1
+            r = [0] * dim
+            for k in range(dim):
+                r[k] = lst[k + 1] - lst[k]
             return r
 
         def list_searchsorted(listToInsert, insertInto):
@@ -1525,7 +1486,7 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
                         return i
                 return len(insertInto)
 
-            return [float_searchsorted(i, insertInto) for i in listToInsert]
+            return [float_searchsorted(item, insertInto) for item in listToInsert]
 
         def clip(lst, min_val, max_val, inPlace=False):
             """
@@ -1533,11 +1494,11 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
             """
             if not inPlace:
                 lst = lst[:]
-            for i in range(len(lst)):
-                if lst[i] < min_val:
-                    lst[i] = min_val
-                elif lst[i] > max_val:
-                    lst[i] = max_val
+            for k in range(len(lst)):
+                if lst[k] < min_val:
+                    lst[k] = min_val
+                elif lst[k] > max_val:
+                    lst[k] = max_val
             return lst
 
         def subtract(a, b):
@@ -1549,15 +1510,15 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
         if type(x0) is float:
             x0 = [x0]
 
-        size = len(x)
+        dim = len(x)
 
         xdiff = diff(x)
         ydiff = diff(y)
 
         # allocate buffer matrices
-        Li = [0] * size
-        Li_1 = [0] * (size - 1)
-        z = [0] * (size)
+        Li = [0] * dim
+        Li_1 = [0] * (dim - 1)
+        z = [0] * dim
 
         # fill diagonals Li and Li-1 and solve [L][y] = [B]
         Li[0] = sqrt(2 * xdiff[0])
@@ -1565,27 +1526,27 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
         B0 = 0.0  # natural boundary
         z[0] = B0 / Li[0]
 
-        for i in range(1, size - 1, 1):
+        for i in range(1, dim - 1, 1):
             Li_1[i] = xdiff[i - 1] / Li[i - 1]
             Li[i] = sqrt(2 * (xdiff[i - 1] + xdiff[i]) - Li_1[i - 1] * Li_1[i - 1])
             Bi = 6 * (ydiff[i] / xdiff[i] - ydiff[i - 1] / xdiff[i - 1])
             z[i] = (Bi - Li_1[i - 1] * z[i - 1]) / Li[i]
 
-        i = size - 1
+        i = dim - 1
         Li_1[i - 1] = xdiff[-1] / Li[i - 1]
         Li[i] = sqrt(2 * xdiff[-1] - Li_1[i - 1] * Li_1[i - 1])
         Bi = 0.0  # natural boundary
         z[i] = (Bi - Li_1[i - 1] * z[i - 1]) / Li[i]
 
         # solve [L.T][x] = [y]
-        i = size - 1
+        i = dim - 1
         z[i] = z[i] / Li[i]
-        for i in range(size - 2, -1, -1):
+        for i in range(dim - 2, -1, -1):
             z[i] = (z[i] - Li_1[i - 1] * z[i + 1]) / Li[i]
 
         # find index
         index = list_searchsorted(x0, x)
-        index = clip(index, 1, size - 1)
+        index = clip(index, 1, dim - 1)
 
         xi1 = [x[num] for num in index]
         xi0 = [x[num - 1] for num in index]
@@ -1606,7 +1567,6 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
         # let's me return a float if a float was put in as x0
         if len(f0) == 1:
             f0 = f0[0]
-
         return f0
 
 
