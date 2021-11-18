@@ -9,10 +9,36 @@ import math
 import os
 import copy
 import operator
+import random
+from timeit import default_timer as timer  # use as start = timer() ...  end = timer()
 from math import sqrt
 
 
-print("hello")
+def val_err_str(val: float, err: float) -> str:
+    """
+    Get a float representation of a value/error pair and create a string representation
+    12.345 +/- 1.23 --> 12.3(12)
+    12.345 +/- 0.012 -> 12.345(12
+    12345 +/- 654  ---> 12300(650)
+    :param val: float representing the value
+    :param err: float representing the error in the value
+    :return: a string representation of the value/error pair
+    """
+    err_sig_figs = 2  # future upgrade path is to allow user to set this
+    dps = 2 - err_sig_figs
+    if err < 10:
+        while err < 10.:
+            err *= 10
+            dps += 1
+        err = round(err, 0)
+    else:  # err > 10
+        while err > 100.:
+            err /= 10
+            dps -= 1
+        err = round(err, 0) * 10 ** (-dps)
+    val = round(val, dps)
+    return f"{val:.{max(0, dps)}f}({err:.0f})"
+
 
 class XRayDataPoint:
     """
@@ -749,10 +775,10 @@ class DiffractionPattern:
         e = self.getErrors()
         r = []
 
-        for j in range(0,len(a),ds):
-            a_new = sum(a[j:j+ds]) / ds
-            i_new = sum(i[j:j+ds]) / ds
-            e_new = sqrt(sum(map(lambda i: i * i, e[j:j+ds]))) / ds
+        for j in range(0, len(a), ds):
+            a_new = sum(a[j:j + ds]) / ds
+            i_new = sum(i[j:j + ds]) / ds
+            e_new = sqrt(sum(map(lambda i: i * i, e[j:j + ds]))) / ds
             r.append(XRayDataPoint(a_new, i_new, e_new))
 
         return DiffractionPattern(r)
@@ -767,7 +793,7 @@ class DiffractionPattern:
         """
         min_ = self.getMinAngle()
         max_ = self.getMaxAngle()
-        do_pos = False # which angles do I do? positive? negative?
+        do_pos = False  # which angles do I do? positive? negative?
         do_neg = False
         pos = None
         neg = None
@@ -790,8 +816,6 @@ class DiffractionPattern:
             neg.sort()
 
         return (pos, neg)
-
-
 
     def _add_and(self, other, operator):
         """
@@ -1227,6 +1251,7 @@ class DiffractionPattern:
             self.diffpat[i] //= other
         return self
 
+
 # --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
@@ -1583,3 +1608,11 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
             f0 = f0[0]
 
         return f0
+
+
+def main():
+    print("You can't run me")
+
+
+if __name__ == "__main__":
+    main()
