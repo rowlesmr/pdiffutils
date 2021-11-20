@@ -9,9 +9,10 @@ import math
 import os
 import copy
 import operator
-import random
-from timeit import default_timer as timer  # use as start = timer() ...  end = timer()
+# import random
+# from timeit import default_timer as timer  # use as start = timer() ...  end = timer()
 from math import sqrt
+from typing import List
 
 
 def val_err_str(val: float, err: float) -> str:
@@ -40,7 +41,7 @@ def val_err_str(val: float, err: float) -> str:
     return f"{val:.{max(0, dps)}f}({err:.0f})"
 
 
-class XRayDataPoint:
+class DiffractionDataPoint:
     """
     This is an X-ray data point.
 
@@ -50,102 +51,61 @@ class XRayDataPoint:
     The name is just semantically related for "normal" diffraction
     """
 
-    def __init__(self, angle, intensity, error=None):
-        self.angle = angle
-        self.intensity = intensity
-        self.error = math.sqrt(abs(self.intensity)) if error is None else abs(error)
+    def __init__(self, x: float, y: float, error: float = None):
+        self.x = x
+        self.y = y
+        self.e = math.sqrt(abs(self.y)) if error is None else abs(error)
 
     def negate(self):
-        self.angle *= -1.0
+        self.x *= -1.0
 
     def zeroOffset(self, offset):
-        self.angle += offset
+        self.x += offset
 
-    def format_output(self, dp_angle=5, dp_intensity=3, dp_error=3, lp_angle=4, lp_intensity=6, lp_error=4):
-        """
-        Format the output of an XRayDataPoint to make it look nice.
-        This is used primarily when printing DiffractionPatterns to a file.
-
-        dp_ refers to the number of decimal places you want to see for angle, intensity, or error
-        lp_ refers to the left padding of the numbers, so that all the decimal points line up
-
-        For example:
-        angle    = 45.368754896
-        dp_angle = 5
-        lp_angle = 4 ie 3 spaces allocated for digits, and one for a negative sign (if it exists)
-        format(angle,f"{1+4+5}.{5}f") = '  45.36875'
-
-
-        Parameters
-        ----------
-        dp_angle : int, optional
-            How many decimal points do you want on the angle?. The default is 5.
-        dp_intensity : int, optional
-            How many decimal points do you want on the intensity?. The default is 3.
-        dp_error : int, optional
-            How many decimal points do you want on the error?. The default is 3.
-        lp_angle : int, optional
-            How many digits do you want to show on the left of the decimal point on the angle?. The default is 4.
-        lp_intensity : int, optional
-            How many digits do you want to show on the left of the decimal point on the intensity?. The default is 6.
-        lp_error : int, optional
-            How many digits do you want to show on the left of the decimal point on the error?. The default is 4.
-
-        Returns
-        -------
-        str
-            A nicely formatted string representing the values of the XRayDataPoint.
-
-        """
-        a = format(self.angle, f"{1 + lp_angle + dp_angle}.{dp_angle}f")
-        i = format(self.intensity, f"{1 + lp_intensity + dp_intensity}.{dp_intensity}f")
-        e = format(self.error, f"{1 + lp_error + dp_error}.{dp_error}f")
-        return f"{a} {i} {e}"
-
-    def __str__(self):
-        return self.format_output(dp_angle=5, dp_intensity=3, dp_error=3)
+    def __str__(self) -> str:
+        return f"{self.x:.5f} {self.y:.3f} {self.e:.3f}"
 
     def __repr__(self):
-        return f"XRayDataPoint({self.angle}, {self.intensity}, {self.error})"
+        return f"XRayDataPoint({self.x}, {self.y}, {self.e})"
 
     def __lt__(self, other):
-        if isinstance(other, XRayDataPoint):
-            return self.angle < other.angle
+        if isinstance(other, DiffractionDataPoint):
+            return self.x < other.x
         else:
             return NotImplemented
 
     def __le__(self, other):
-        if isinstance(other, XRayDataPoint):
-            return self.angle <= other.angle
+        if isinstance(other, DiffractionDataPoint):
+            return self.x <= other.x
         else:
             return NotImplemented
 
     def __eq__(self, other):
-        if isinstance(other, XRayDataPoint):
-            return math.isclose(self.angle, other.angle)
+        if isinstance(other, DiffractionDataPoint):
+            return math.isclose(self.x, other.x)
         else:
             return NotImplemented
 
     def __ne__(self, other):
-        if isinstance(other, XRayDataPoint):
-            return not math.isclose(self.angle, other.angle)
+        if isinstance(other, DiffractionDataPoint):
+            return not math.isclose(self.x, other.x)
         else:
             return NotImplemented
 
     def __ge__(self, other):
-        if isinstance(other, XRayDataPoint):
-            return self.angle >= other.angle
+        if isinstance(other, DiffractionDataPoint):
+            return self.x >= other.x
         else:
             return NotImplemented
 
     def __gt__(self, other):
-        if isinstance(other, XRayDataPoint):
-            return self.angle > other.angle
+        if isinstance(other, DiffractionDataPoint):
+            return self.x > other.x
         else:
             return NotImplemented
 
     def __hash__(self):
-        return hash((self.angle, self.intensity, self.error))
+        return hash((self.x, self.y, self.e))
 
     def __mul__(self, other):
         """
@@ -157,7 +117,7 @@ class XRayDataPoint:
 
         Returns
         -------
-        XRayDataPoint
+        DiffractionDataPoint
             with the intensities scaled by other together, and errors done nicely.
 
         Raises
@@ -168,9 +128,9 @@ class XRayDataPoint:
         if not isinstance(other, (float, int)):
             raise TypeError(f"Multiplication with type {type(other)} is undefined.")
 
-        return XRayDataPoint(self.angle,
-                             self.intensity * other,
-                             self.error * other)
+        return DiffractionDataPoint(self.x,
+                                    self.y * other,
+                                    self.e * other)
 
     def __imul__(self, other):
         """
@@ -182,7 +142,7 @@ class XRayDataPoint:
 
         Returns
         -------
-        XRayDataPoint
+        DiffractionDataPoint
             with the intensities scaled by other together, and errors done nicely.
 
         Raises
@@ -193,8 +153,8 @@ class XRayDataPoint:
         if not isinstance(other, (float, int)):
             return NotImplemented
 
-        self.intensity *= other
-        self.error *= other
+        self.y *= other
+        self.e *= other
 
         return self
 
@@ -208,7 +168,7 @@ class XRayDataPoint:
 
         Returns
         -------
-        XRayDataPoint
+        DiffractionDataPoint
             with the intensities scaled by other together, and errors done nicely.
 
         Raises
@@ -219,9 +179,9 @@ class XRayDataPoint:
         if not isinstance(other, (float, int)):
             raise TypeError(f"Division with type {type(other)} is undefined.")
 
-        return XRayDataPoint(self.angle,
-                             self.intensity / other,
-                             self.error / other)
+        return DiffractionDataPoint(self.x,
+                                    self.y / other,
+                                    self.e / other)
 
     def __itruediv__(self, other):
         """
@@ -233,7 +193,7 @@ class XRayDataPoint:
 
         Returns
         -------
-        XRayDataPoint
+        DiffractionDataPoint
             with the intensities scaled by other together, and errors done nicely.
 
         Raises
@@ -244,8 +204,8 @@ class XRayDataPoint:
         if not isinstance(other, (float, int)):
             return NotImplemented
 
-        self.intensity /= other
-        self.error /= other
+        self.y /= other
+        self.e /= other
         return self
 
     def __floordiv__(self, other):
@@ -258,7 +218,7 @@ class XRayDataPoint:
 
         Returns
         -------
-        XRayDataPoint
+        DiffractionDataPoint
             with the intensities scaled by other together, and errors done nicely.
 
         Raises
@@ -269,9 +229,9 @@ class XRayDataPoint:
         if not isinstance(other, (float, int)):
             raise TypeError(f"Division with type {type(other)} is undefined.")
 
-        return XRayDataPoint(self.angle,
-                             self.intensity // other,
-                             self.error // other)
+        return DiffractionDataPoint(self.x,
+                                    self.y // other,
+                                    self.e // other)
 
     def __ifloordiv__(self, other):
         """
@@ -283,7 +243,7 @@ class XRayDataPoint:
 
         Returns
         -------
-        XRayDataPoint
+        DiffractionDataPoint
             with the intensities scaled by other together, and errors done nicely.
 
         Raises
@@ -294,8 +254,8 @@ class XRayDataPoint:
         if not isinstance(other, (float, int)):
             return NotImplemented
 
-        self.intensity //= other
-        self.error //= other
+        self.y //= other
+        self.e //= other
         return self
 
     def _add_sub(self, other, operator):
@@ -315,19 +275,19 @@ class XRayDataPoint:
 
         """
         if isinstance(other, (float, int)):
-            return XRayDataPoint(self.angle,
-                                 operator(self.intensity, other),
-                                 self.error)
+            return DiffractionDataPoint(self.x,
+                                        operator(self.y, other),
+                                        self.e)
 
-        if not isinstance(other, XRayDataPoint):
+        if not isinstance(other, DiffractionDataPoint):
             raise TypeError(f"Addition/subtraction with type {type(other)} is undefined.")
 
         if self == other:
-            return XRayDataPoint(self.angle,
-                                 operator(self.intensity, other.intensity),
-                                 math.sqrt(self.error ** 2 + other.error ** 2))
+            return DiffractionDataPoint(self.x,
+                                        operator(self.y, other.y),
+                                        math.sqrt(self.e ** 2 + other.e ** 2))
         else:
-            raise ValueError(f"Angles are not equal: {self.angle} & {other.angle}.")
+            raise ValueError(f"Angles are not equal: {self.x} & {other.x}.")
 
     def __add__(self, other):
         """
@@ -340,7 +300,7 @@ class XRayDataPoint:
 
         Returns
         -------
-        XRayDataPoint
+        DiffractionDataPoint
             with the intensities added together, and errors done nicely.
 
         Raises
@@ -361,7 +321,7 @@ class XRayDataPoint:
 
         Returns
         -------
-        XRayDataPoint
+        DiffractionDataPoint
             with the intensities added together, and errors done nicely.
 
         Raises
@@ -386,7 +346,7 @@ class XRayDataPoint:
 
         Returns
         -------
-        XRayDataPoint
+        DiffractionDataPoint
             with the intensities added together, and errors done nicely.
 
         Raises
@@ -395,16 +355,16 @@ class XRayDataPoint:
 
         """
         if isinstance(other, (float, int)):
-            self.intensity = operator(self.intensity, other)
+            self.y = operator(self.y, other)
             return self
 
-        if not isinstance(other, XRayDataPoint):
+        if not isinstance(other, DiffractionDataPoint):
             return NotImplemented
 
-        if self.angle != other.angle:
-            raise ValueError(f"Angles are not equal: {self.angle} & {other.angle}.")
-        self.intensity = operator(self.intensity, other.intensity)
-        self.error = math.sqrt(self.error ** 2 + other.error ** 2)
+        if self.x != other.x:
+            raise ValueError(f"Angles are not equal: {self.x} & {other.x}.")
+        self.y = operator(self.y, other.y)
+        self.e = math.sqrt(self.e ** 2 + other.e ** 2)
         return self
 
     def __iadd__(self, other):
@@ -421,7 +381,7 @@ class XRayDataPoint:
 
         Returns
         -------
-        XRayDataPoint
+        DiffractionDataPoint
             with the intensities added together, and errors done nicely.
 
         Raises
@@ -445,7 +405,7 @@ class XRayDataPoint:
 
         Returns
         -------
-        XRayDataPoint
+        DiffractionDataPoint
             with the intensities added together, and errors done nicely.
 
         Raises
@@ -473,15 +433,15 @@ class XRayDataPoint:
         ValueError: if wrong type or angles not equal used.
 
         """
-        if not isinstance(other, XRayDataPoint):
+        if not isinstance(other, DiffractionDataPoint):
             raise TypeError(f"Averaging with type {type(other)} is undefined.")
 
         if self == other:
-            return XRayDataPoint(self.angle,
-                                 (self.intensity + other.intensity) / 2,
-                                 math.sqrt(self.error ** 2 + other.error ** 2) / 2)
+            return DiffractionDataPoint(self.x,
+                                        (self.y + other.y) / 2,
+                                        math.sqrt(self.e ** 2 + other.e ** 2) / 2)
         else:
-            raise ValueError(f"Angles are not equal: {self.angle} & {other.angle}")
+            raise ValueError(f"Angles are not equal: {self.x} & {other.x}")
 
     def __iand__(self, other):
         """
@@ -495,7 +455,7 @@ class XRayDataPoint:
 
         Returns
         -------
-        XRayDataPoint
+        DiffractionDataPoint
             with the intensities added together, and errors done nicely.
 
         Raises
@@ -503,19 +463,20 @@ class XRayDataPoint:
         ValueError if wrong type or angles not equal used.
 
         """
-        if not isinstance(other, XRayDataPoint):
+        if not isinstance(other, DiffractionDataPoint):
             return NotImplemented
 
         if self != other:
-            raise ValueError(f"Angles are not equal: {self.angle} & {other.angle}.")
-        self.intensity = (self.intensity + other.intensity) / 2
-        self.error = math.sqrt(self.error ** 2 + other.error ** 2) / 2
+            raise ValueError(f"Angles are not equal: {self.x} & {other.x}.")
+        self.y = (self.y + other.y) / 2
+        self.e = math.sqrt(self.e ** 2 + other.e ** 2) / 2
         return self
 
 
 # --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
+
 
 class DiffractionPattern:
     """
@@ -527,96 +488,29 @@ class DiffractionPattern:
 
     """
 
-    def __init__(self, data, aveStepSize=None, do_deep_copy=True):
+    def __init__(self, diffpat: List[DiffractionDataPoint], filename: str = None, meta=None):
         """
         Read in inital data in order to make everything.
-
         Angles must be strictly increasing
-
 
         Parameters
         ----------
-        data : a string representing a filename, or a list of XRayDataPoints
-        aveStepSize: a float containing the average step size, if already known.
+        diffpat : a list of DiffractionDataPoints
 
         Returns
         -------
         None.
-
-        Raises
-        ------
-        ValueError if angles don't strictly increase
-
         """
+        self.filename = filename
+        self.diffpat = diffpat
+        self.meta = meta  # any information at all about this diffraction pattern. Can be anything of any type.
 
-        self.diffpat = []
-        self.aveStepSize = aveStepSize  # this will get used when splining. Eventually. When I get around to doing it.
-        self.filename = None
+        self.xs = [xdp.x for xdp in self.diffpat]
+        self.ys = [xdp.y for xdp in self.diffpat]
+        self.es = [xdp.e for xdp in self.diffpat]
 
-        # This is for nice printing of the results - see writeToFile
-        self.angle_padding = 0
-        self.intensity_padding = 0
-        self.error_padding = 0
-
-        # deals with XY and XYE files with no comments and no missing lines
-        if type(data) == str:  # treat it as a filename
-            self.diffpat = self._readXYorXYE(data, aveStepSize)
-
-        elif type(data) == list and all(isinstance(x, XRayDataPoint) for x in data):
-            self.diffpat = copy.deepcopy(data) if do_deep_copy else data
-            n = 0
-            tot = 0
-            for i in range(1, len(self.diffpat)):
-                n += 1
-                tot += self.diffpat[i].angle - self.diffpat[i - 1].angle
-
-                self.angle_padding = max(self.angle_padding, len(str(round(self.diffpat[i].angle))))
-                self.intensity_padding = max(self.intensity_padding, len(str(round(self.diffpat[i].intensity))))
-                self.error_padding = max(self.error_padding, len(str(round(self.diffpat[i].error))))
-
-            if self.aveStepSize is None:
-                self.aveStepSize = tot / n
-
-        else:
-            raise TypeError(f"Don't know how to read that input ({type(data)}).")
-
-    def _readXYorXYE(self, filename, aveStepSize=None):
-        lst = []
-        n = 0
-        tot = 0
-
-        # print(f"Now reading {filename}.")
-        with open(filename) as f:
-            print(f"Reading from {os.path.abspath(filename)}.")
-            self.filename = filename
-            for line in f:
-                s = line.split()  # splits on whitespace
-                angle = float(s[0])
-                intensity = float(s[1])
-                error = float(s[2]) if len(s) == 3 else None
-                xdp = XRayDataPoint(angle, intensity, error)
-
-                self.angle_padding = max(self.angle_padding, len(str(round(xdp.angle))))
-                self.intensity_padding = max(self.intensity_padding, len(str(round(xdp.intensity))))
-                self.error_padding = max(self.error_padding, len(str(round(xdp.error))))
-
-                lst.append(xdp)
-
-                # compare angles to see if strictly increasing
-                if len(lst) >= 2:
-                    first_angle = lst[-2].angle  # second-last value
-                    second_angle = lst[-1].angle  # last value
-
-                    if first_angle >= second_angle:  # ie the angle went down, and not up
-                        raise ValueError("Angles are not strictly increasing.")
-
-                    n += 1
-                    tot += second_angle - first_angle  # to calculate the averagestepsize
-
-        if aveStepSize is None:
-            self.aveStepSize = tot / n
-
-        return lst
+        step_sizes = [j - i for i, j in zip(self.xs[:-1], self.xs[1:])]
+        self.ave_step_size = sum(step_sizes) / len(step_sizes)
 
     def negate(self):
         for d in self.diffpat:
@@ -625,57 +519,21 @@ class DiffractionPattern:
     def reverse(self):
         self.diffpat.reverse()
 
-    def zeroOffset(self, offset):
+    def zeroOffset(self, offset: float):
         for d in self.diffpat:
             d.zeroOffset(offset)
 
     def getMinAngle(self):
-        return self.diffpat[0].angle
+        return self.diffpat[0].x
 
     def getMaxAngle(self):
-        return self.diffpat[-1].angle
+        return self.diffpat[-1].x
 
     def getNumOfDataPoints(self):
         return len(self.diffpat)
 
-    def getAverageStepSize(self):
-        return self.aveStepSize
-
     def getData(self):
         return copy.deepcopy(self.diffpat)
-
-    def getAngles(self):
-        """
-        Get all the angles in the DP as a list
-
-        Returns
-        -------
-        list of floats.
-
-        """
-        return [x.angle for x in self.diffpat]
-
-    def getIntensities(self):
-        """
-        Get all the intensities in the DP as a list
-
-        Returns
-        -------
-        list of floats.
-
-        """
-        return [x.intensity for x in self.diffpat]
-
-    def getErrors(self):
-        """
-        Get all the erros in the DP as a list
-
-        Returns
-        -------
-        list of floats.
-
-        """
-        return [x.error for x in self.diffpat]
 
     def __len__(self):
         return len(self.diffpat)
@@ -684,55 +542,33 @@ class DiffractionPattern:
         return "".join(str(d) + "\n" for d in self.diffpat)
 
     def __repr__(self):
-        s = "DiffractionPattern[\n"
+        s = "DiffractionPattern([\n"
         for d in self.diffpat:
             s += repr(d) + ",\n"
-        s = s[:-2] + "\n]"
+        s = f"{s[:-2]}\n], {self.filename}, {self.meta})"
         return s
 
-    def setPaddingPrettyPrinting(self, ang_, int_, err_):
-        self.angle_padding = max(self.angle_padding, len(str(round(ang_))))
-        self.intensity_padding = max(self.intensity_padding, len(str(round(int_))))
-        self.error_padding = max(self.error_padding, len(str(round(err_))))
-
-    def writeToFile(self, filename, dp_angle=5, dp_intensity=3, dp_error=3):
-        print(f"Writing to {os.path.abspath(filename)}.")
-        with open(filename, "w") as f:
-            for d in self.diffpat:
-                f.write(" " + d.format_output(dp_angle, dp_intensity, dp_error,
-                                              self.angle_padding, self.intensity_padding, self.error_padding) + "\n")
-
-    def trim(self, min_angle=-180, max_angle=180):
+    def trim(self, min_x: float = -180, max_x: float = 180):
         """
         Trims a diffraction pattern such that there exist no angles less
         than min_angle, and no angles greater than max_angle.
 
         Parameters
         ----------
-        min_angle : float, optional
+        min_x : float, optional
             the minimum angle you want to see in your diffraction pattern. The default is -180.
-        max_angle : float, optional
+        max_x : float, optional
             the maximum angle you want to see in your diffraction pattern. The default is 180.
-
-        Returns
-        -------
-        DiffractionPattern.
-
         """
-        self.diffpat = [xdp for xdp in self.diffpat if xdp.angle >= min_angle and xdp.angle <= max_angle]
+        self.diffpat = [xdp for xdp in self.diffpat if min_x <= xdp.x <= max_x]
 
     def sort(self):
         """
         In-place sort of the diffraction pattern, based on angles
-
-        Returns
-        -------
-        None.
-
         """
         self.diffpat.sort()
 
-    def downsample(self, ds):
+    def downsample(self, ds: float):
         """
         Downsamples the number of angles by averaging them.
         ds == 2 gives half the number of angles, 3 gives one third, and so on.
@@ -753,9 +589,9 @@ class DiffractionPattern:
             a_new = sum(a[j:j + ds]) / ds
             i_new = sum(i[j:j + ds]) / ds
             e_new = sqrt(sum(map(lambda i: i * i, e[j:j + ds]))) / ds
-            r.append(XRayDataPoint(a_new, i_new, e_new))
+            r.append(DiffractionDataPoint(a_new, i_new, e_new))
 
-        return DiffractionPattern(r)
+        return DiffractionExperiment(r)
 
     def split_on_zero(self):
         """
@@ -793,7 +629,6 @@ class DiffractionPattern:
 
     def _add_and(self, other, operator):
         """
-
         This function is used by __add__ and __and__ to allow for + and &
         to mean summing or averging diffraction patterns.
 
@@ -818,7 +653,7 @@ class DiffractionPattern:
         TypeError: if you try to use the wrong other type
 
         """
-        if not isinstance(other, DiffractionPattern):
+        if not isinstance(other, DiffractionExperiment):
             raise TypeError(f"Addition with type {type(other)} is undefined.")
 
         # get deepcopy of the diffpats so I'm not plagued by pointer errors
@@ -853,8 +688,7 @@ class DiffractionPattern:
                     lst.pop(j)
             r.append(p1)
             i += 1
-        return DiffractionPattern(r,
-                                  do_deep_copy=False)  # the initialisation takes a deepcopy of any incoming XRayDataPoint list
+        return DiffractionExperiment(r)
 
     def _iadd_iand(self, other, operator):
         """
@@ -883,7 +717,7 @@ class DiffractionPattern:
         TypeError: if you try to use the wrong other type
 
         """
-        if not isinstance(other, DiffractionPattern):
+        if not isinstance(other, DiffractionExperiment):
             return NotImplemented
 
         # concatenate the two diffpat list and sort in increasing angle
@@ -939,7 +773,7 @@ class DiffractionPattern:
 
         for i in range(len(r)):
             r[i] = r[i] * other
-        return DiffractionPattern(r, do_deep_copy=False)
+        return DiffractionExperiment(r, do_deep_copy=False)
 
     def __truediv__(self, other):
         """
@@ -966,7 +800,7 @@ class DiffractionPattern:
 
         for i in range(len(r)):
             r[i] = r[i] / other
-        return DiffractionPattern(r, do_deep_copy=False)
+        return DiffractionExperiment(r, do_deep_copy=False)
 
     def __floordiv__(self, other):
         """
@@ -993,7 +827,7 @@ class DiffractionPattern:
 
         for i in range(len(r)):
             r[i] = r[i] // other
-        return DiffractionPattern(r, do_deep_copy=False)
+        return DiffractionExperiment(r, do_deep_copy=False)
 
     def __add__(self, other):
         """
@@ -1018,7 +852,7 @@ class DiffractionPattern:
             r = copy.deepcopy(self.diffpat)
             for i in range(len(r)):
                 r[i] = r[i] + other
-            return DiffractionPattern(r, do_deep_copy=False)
+            return DiffractionExperiment(r, do_deep_copy=False)
         elif isinstance(other, list):
             if len(other) != len(self.diffpat):
                 raise ValueError(
@@ -1026,7 +860,7 @@ class DiffractionPattern:
             r = copy.deepcopy(self.diffpat)
             for i in range(len(r)):
                 r[i] = r[i] + other[i]
-            return DiffractionPattern(r, do_deep_copy=False)
+            return DiffractionExperiment(r, do_deep_copy=False)
         else:
             return self._add_and(other, operator.add)
 
@@ -1053,7 +887,7 @@ class DiffractionPattern:
             r = copy.deepcopy(self.diffpat)
             for i in range(len(r)):
                 r[i] = r[i] - other
-            return DiffractionPattern(r, do_deep_copy=False)
+            return DiffractionExperiment(r, do_deep_copy=False)
         elif isinstance(other, list):
             if len(other) != len(self.diffpat):
                 raise ValueError(
@@ -1061,7 +895,7 @@ class DiffractionPattern:
             r = copy.deepcopy(self.diffpat)
             for i in range(len(r)):
                 r[i] = r[i] - other[i]
-            return DiffractionPattern(r, do_deep_copy=False)
+            return DiffractionExperiment(r, do_deep_copy=False)
         else:
             return self._add_and(other, operator.sub)
 
@@ -1232,7 +1066,8 @@ class DiffractionPattern:
 
 class InterpolatedDiffractionPattern(DiffractionPattern):
 
-    def __init__(self, data, interp_stepsize, aveStepSize=None, do_deep_copy=True):
+    def __init__(self, diffpat: List[DiffractionDataPoint], interp_stepsize: float, filename: str = None, meta=None):
+
         """
         Read in inital data in order to make everything.
 
@@ -1250,71 +1085,53 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
         None.
 
         """
-
-        super().__init__(data, aveStepSize, do_deep_copy)
-        # self.orig_diffpat = copy.deepcopy(self.diffpat)
+        super().__init__(diffpat, filename, meta)
         self.diffpat = InterpolatedDiffractionPattern.spline(interp_stepsize, self)
 
-        # update ave step size after splining
-        n = 0
-        tot = 0
-        for i in range(1, len(self.diffpat)):
-            a = self.diffpat[i - 1].angle
-            b = self.diffpat[i].angle
-            n += 1
-            tot += b - a
-        self.aveStepSize = tot / n
-
-    # def getOrigData(self):
-    #     return copy.deepcopy(self.orig_diffpat)
-
-    def spline(step_spline, dp):
+    @staticmethod
+    def spline(step_spline, dp: DiffractionPattern):
         # print(f"Now splining {dp.filename} in steps of {step_spline}")
         IDP = InterpolatedDiffractionPattern
         # these will hold the full splined data once I've finished
-        angle_spline = []
-        intensity_spline = []
-        error_spline = []
+        x_spline = []
+        y_spline = []
+        e_spline = []
 
         # These are the original data that I am going to spline
-        dp_angle = dp.getAngles()
-        dp_intensity = dp.getIntensities()
-        dp_error = dp.getErrors()
+        xs = dp.xs
+        ys = dp.ys
+        es = dp.es
 
         # arbitrary choice of cut-off size -  If i encounter a stepsize
         #   greater then 5*the average, then I'll assume that is the next module
-        step_threshold = 5 * dp.aveStepSize
+        step_threshold = 5 * dp.ave_step_size
 
         # Now I start the spline process
         start_index = 0
-        for stop_index, i in enumerate(range(1, len(dp_angle)), start=1):
-            step = dp_angle[i] - dp_angle[i - 1]
-
-            if step >= step_threshold or i == len(dp_angle) - 1:
+        for stop_index, i in enumerate(range(1, len(xs)), start=1):
+            step = xs[i] - xs[i - 1]
+            if step >= step_threshold or i == len(xs) - 1:
                 # this is the range of data I want to interpolate
                 #  I want to trim off a few datapoints either side of the module edge
                 #  so I don't have to deal with their noisy edges.
                 DROP_POINTS = 5
-                angle_list = dp_angle[start_index + DROP_POINTS:stop_index - DROP_POINTS]
-                intensity_list = dp_intensity[start_index + DROP_POINTS:stop_index - DROP_POINTS]
-                error_list = dp_error[start_index + DROP_POINTS:stop_index - DROP_POINTS]
+                x_list = xs[start_index + DROP_POINTS:stop_index - DROP_POINTS]
+                y_list = ys[start_index + DROP_POINTS:stop_index - DROP_POINTS]
+                e_list = es[start_index + DROP_POINTS:stop_index - DROP_POINTS]
 
                 # this is the interpolated data
-                angle_interp = IDP.generateInterpList(angle_list[0], angle_list[-1], step_spline)
-                intensity_interp = IDP.cubic_interp1d(angle_interp, angle_list, intensity_list)
-                error_interp = IDP.cubic_interp1d(angle_interp, angle_list, error_list)
+                x_interp = IDP.generateInterpList(x_list[0], x_list[-1], step_spline)
+                y_interp = IDP.cubic_interp1d(x_interp, x_list, y_list)
+                e_interp = IDP.cubic_interp1d(x_interp, x_list, e_list)
 
                 # put the just-interpolated-data into the whole list of data to be used to make the new DP
-                angle_spline += angle_interp
-                intensity_spline += intensity_interp
-                error_spline += error_interp
+                x_spline += x_interp
+                y_spline += y_interp
+                e_spline += e_interp
 
                 start_index = stop_index
 
-        return [
-            XRayDataPoint(angle_spline[i], intensity_spline[i], error_spline[i])
-            for i in range(len(angle_spline))
-        ]
+        return [DiffractionDataPoint(x_spline[i], y_spline[i], e_spline[i]) for i in range(len(x_spline))]
 
     @staticmethod
     def spline2(interp, dp):
@@ -1342,9 +1159,9 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
             The interpolated data
 
         """
-        angle = dp.getAngles()
-        intensity = dp.getIntensities()
-        error = dp.getErrors()
+        angle = dp.xs
+        intensity = dp.ys
+        error = dp.es
 
         # check limits on interpolation
         if interp[0] < angle[0]:  # ie I'm interpolating before the data starts
@@ -1356,7 +1173,7 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
         error_interp = InterpolatedDiffractionPattern.cubic_interp1d(interp, angle, error)
 
         return [
-            XRayDataPoint(interp[i], intensity_interp[i], error_interp[i])
+            DiffractionDataPoint(interp[i], intensity_interp[i], error_interp[i])
             for i in range(len(interp))
         ]
 
@@ -1570,8 +1387,339 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
         return f0
 
 
+# --------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
+
+class DiffractionExperiment:
+    """
+    This is a Diffraction Experiment.
+
+    It is essentially a list of DiffractionPatterns.
+
+
+    """
+
+    def __init__(self, diffpats: List[DiffractionPattern], filename: str = None, meta=None):
+        """
+        Read in inital data in order to make everything.
+        Angles must be strictly increasing
+
+        Parameters
+        ----------
+        data : a string representing a filename, or a list of XRayDataPoints
+
+        Returns
+        -------
+        None.
+        """
+        self.filename = filename
+        self.diffpats = diffpats
+        self.meta = meta  # any information at all about this diffraction pattern. Can be anything of any type.
+
+    def negate(self):
+        for d in self.diffpats:
+            d.negate()
+
+    def reverse(self):
+        for d in self.diffpats:
+            d.reverse()
+
+    def zeroOffset(self, offset: float):
+        for d in self.diffpats:
+            d.zeroOffset(offset)
+
+    def getData(self):
+        return copy.deepcopy(self.diffpats)
+
+    def __len__(self):
+        return len(self.diffpats)
+
+    def __str__(self):
+        return "".join(str(d) + "\n" for d in self.diffpats)
+
+    def __repr__(self):
+        s = "DiffractionExperiment([\n"
+        for d in self.diffpats:
+            s += repr(d) + ",\n"
+        s = f"{s[:-2]}\n], {self.filename}, {self.meta})"
+        return s
+
+    def trim(self, min_angle: float = -180, max_angle: float = 180):
+        """
+        Trims a diffraction pattern such that there exist no angles less
+        than min_angle, and no angles greater than max_angle.
+
+        Parameters
+        ----------
+        min_angle : float, optional
+            the minimum angle you want to see in your diffraction pattern. The default is -180.
+        max_angle : float, optional
+            the maximum angle you want to see in your diffraction pattern. The default is 180.
+        """
+        self.diffpats = [dp.trim(min_angle, max_angle) for dp in self.diffpats]
+
+    def sort(self):
+        """
+        In-place sort of the diffraction pattern, based on angles
+        """
+        self.diffpats = [dp.sort() for dp in self.diffpats]
+
+    def downsample(self, ds: float):
+        """
+        Downsamples the number of angles by averaging them.
+        ds == 2 gives half the number of angles, 3 gives one third, and so on.
+        Parameters
+        ----------
+        ds an integer describing the factor by which to downsample.
+        """
+        self.diffpats = [dp.downsample(ds) for dp in self.diffpats]
+
+    def average_patterns(self, num: int, is_rolling: bool = True):
+        """
+        Averages num patterns. If rolling average, then
+        patterns 1..num are averaged, then 2..num+1, 3--num+2 and so on.
+        If not rolling average, then 1..num, num+1..num+num and so on.
+        :param num: number of patterns to average
+        :param is_rolling: do a rolling average?
+        :return:
+        """
+        range_step = 1 if is_rolling else num
+        dps = []
+
+        for i in range(0, len(self.diffpats) - num, range_step):
+            dp = copy.deepcopy(self.diffpats[i])
+            for j in range(1, num):
+                dp += self.diffpats[i + j]
+            dp /= num
+            dps.append(dp)
+        self.diffpats = dps
+
+    def interpolate(self, step: float, new_x: List[float] = None):
+        pass
+
+    def split_on_zero(self):
+        """
+        Gets a diffraction pattern that contains -ve and +ve angles, and returns two diffraction patterns:
+        one from the +ve bit, and a negated version from the -ve side
+        Returns
+        -------
+        A tuple containing two diffraction patterns. The first is from the +ve side, the second from the -ve side
+        """
+        pass
+
+
+# --------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
+
+class Read:
+    """
+    Reads in data from file into a DiffractionPattern
+    can read in XY, XYE files. Skips the line if it encounters a non-float thing.
+    """
+
+    @staticmethod
+    def read(filename: str):
+        """
+        This guesses which read method to try based on filename.
+        :param filename: string representing the contents of the file
+        :return: a list of XRayDataPoints
+        """
+        if filename.endswith(".xye"):
+            return Read.xye(filename)
+        elif filename.endswith(".xy"):
+            return Read.xy(filename)
+        elif filename.endswith(".dat"):
+            return Read.dat(filename)
+        # getting here means that I don't know how to read the file
+        raise ValueError(f"I don't know how to read {filename}.")
+
+    @staticmethod
+    def xye(filename: str, is_xy: bool = False, sort: bool = True):
+        lst = []
+        increasing = True
+        # print(f"Now reading {filename}.")
+        with open(filename) as f:
+            print(f"Reading from {os.path.abspath(filename)}.")
+            for line in f:
+                s = line.split()  # splits on whitespace
+                try:
+                    angle = float(s[0])
+                    intensity = float(s[1])
+                    error = float(s[2]) if not is_xy else None
+                except ValueError:
+                    continue
+                xdp = DiffractionDataPoint(angle, intensity, error)
+                lst.append(xdp)
+
+                # compare angles to see if strictly increasing
+                if len(lst) >= 2 and increasing:
+                    first_angle = lst[-2].x  # second-last value
+                    second_angle = lst[-1].x  # last value
+                    if first_angle >= second_angle:  # ie the angle went down, and not up
+                        increasing = False
+        if not increasing:
+            if sort:
+                lst.sort()
+            else:
+                raise ValueError("X-axis must be in monotonically increasing order")
+        return lst
+
+    @staticmethod
+    def xy(filename: str):
+        return Read.xye(filename, is_xy=True)
+
+    @staticmethod
+    def dat(filename: str):
+        lst = []
+        # print(f"Now reading {filename}.")
+        with open(filename) as f:
+            print(f"Reading from {os.path.abspath(filename)}.")
+            # this first for is to skip the comments and grab the start step stop values
+            for line in f:
+                s = line.split()  # splits on whitespace
+                try:
+                    start = float(s[0])
+                    step = float(s[1])
+                    stop = float(s[2])
+                    break
+                except (ValueError, IndexError):
+                    continue
+            num_points = int(round((stop - start) / step, 5)) + 1
+
+            # This second loop is to get the intensities. It doesn't matter how many are on each line.
+            #   This just sucks them all up, line by line.
+            i = 0
+            for line in f:
+                tokens = line.split()  # splits on whitespace
+                for token in tokens:
+                    try:
+                        angle = start + i * step
+                        intensity = float(token)
+                        xdp = DiffractionDataPoint(angle, intensity)
+                        lst.append(xdp)
+                        i += 1
+                    except ValueError:  # this will be triggered if token isn't a float, so the token just gets skipped
+                        continue
+        if i != num_points:
+            raise ValueError(f"Received {i} points, should have {num_points}.")
+        return lst
+
+
+# --------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
+
+class Write:
+    """
+    Writes data in the various data formats
+    """
+
+    @staticmethod
+    def _get_padding(dp: DiffractionPattern):
+        x_pad = int(math.log10(max(dp.xs))) + 2
+        y_pad = int(math.log10(max(dp.ys))) + 2
+        e_pad = max(int(math.log10(max(dp.es))), 0) + 2
+        return x_pad, y_pad, e_pad
+
+    @staticmethod
+    def _get_formatted(d: DiffractionDataPoint, x_dp: int, y_dp: int, e_dp: int, x_pad: int, y_pad: int, e_pad: int):
+        a = f"{d.x:{1 + x_pad + x_dp}.{x_dp}f}"
+        i = f"{d.y:{1 + y_pad + y_dp}.{y_dp}f}"
+        e = f"{d.e:{1 + e_pad + e_dp}.{e_dp}f}"
+        return a, i, e
+
+    @staticmethod
+    def xye(dp: DiffractionPattern, filename: str,
+            dp_angle: int = 5, dp_intensity: int = 3, dp_error: int = 3, is_xy: bool = False):
+        """
+        To write a nice XYE file to a file.
+
+        dp_ refers to the number of decimal places you want to see for angle, intensity, or error
+        lp_ refers to the left padding of the numbers, so that all the decimal points line up
+
+        For example:
+        angle    = 45.368754896
+        dp_angle = 5
+        lp_angle = 4 ie 3 spaces allocated for digits, and one for a negative sign (if it exists)
+        format(angle,f"{1+4+5}.{5}f") = '  45.36875'
+
+        :param dp:
+        :param filename:
+        :param dp_angle: How many decimal points do you want on the angle?. The default is 5.
+        :param dp_intensity: How many decimal points do you want on the intensity?. The default is 3.
+        :param dp_error: How many decimal points do you want on the error?. The default is 3.
+        :param is_xy:
+        :return:
+        """
+        print(f"Writing to {os.path.abspath(filename)}.")
+        with open(filename, "w") as f:
+            diffpat = dp.diffpat
+            x_pad, y_pad, e_pad = Write._get_padding(dp)
+
+            for d in diffpat:
+                a, i, e = Write._get_formatted(d, dp_angle, dp_intensity, dp_error, x_pad, y_pad, e_pad)
+                if is_xy:
+                    f.write(f"{a}{i}\n")
+                else:
+                    f.write(f"{a}{i}{e}\n")
+
+    @staticmethod
+    def xy(dp: DiffractionPattern, filename: str, dp_angle: int = 5, dp_intensity: int = 3, dp_error: int = 3):
+        Write.xye(dp, filename, dp_angle, dp_intensity, dp_error, is_xy=True)
+
+    @staticmethod
+    def dat(dp: DiffractionPattern, filename: str, dp_angle: int = 5, dp_intensity: int = 0):
+        diffpat = dp.diffpat
+        x_pad, y_pad, _ = Write._get_padding(dp)
+        x_start = diffpat[0].x
+        x_stop = diffpat[-1].x
+        num_points = len(diffpat)
+        x_step = (x_stop - x_start) / (num_points - 1)
+
+        print(f"Writing to {os.path.abspath(filename)}.")
+        with open(filename, "w") as f:
+            f.write("\n")
+            f.write("\n")
+            f.write("\n")
+            f.write("\n")
+
+            x_start = f"{x_start:.{dp_angle}f}"
+            x_step = f"{x_step:.{dp_angle}f}"
+            x_stop = f"{x_stop:.{dp_angle}f}"
+            f.write(f"{x_start} {x_step} {x_stop}\n")
+            for k, d in enumerate(diffpat, start=1):
+                _, i, _ = Write._get_formatted(d, dp_angle, dp_intensity, 3, x_pad, y_pad, 3)
+                f.write(f"{i}")
+                if k % 10 == 0:
+                    f.write("\n")
+
+    @staticmethod
+    def cif(dp: DiffractionPattern, filename: str, dp_angle: int = 5,
+            data_block: str = "pdiffutils", x_type: str = "_pd_meas_2theta_scan", y_type: str = "_pd_meas_intensity_total"):
+        diffpat = dp.diffpat
+        x_pad, _, _ = Write._get_padding(dp)
+        ys = [val_err_str(y, e) for y, e in zip(dp.ys, dp.es)]
+        max_len_y = 0
+        for y in ys:
+            max_len_y = max(max_len_y, len(y))
+
+        print(f"Writing to {os.path.abspath(filename)}.")
+        with open(filename, "w") as f:
+            f.write(f"data_{data_block}\n")
+            f.write("\tloop_\n")
+            f.write(f"\t{x_type}\n")
+            f.write(f"\t{y_type}\n")
+            for d, y in zip(diffpat, ys):
+                x, _, _ = Write._get_formatted(d, dp_angle, 3, 3, x_pad, 3, 3)
+                f.write(f"\t{x} {y.rjust(max_len_y, ' ')}\n")
+
+
 def main():
-    print("You can't run me")
+    dp = DiffractionPattern(Read.dat("test.dat"))
+    print(repr(dp))
+    Write.cif(dp, "trial.cif")
 
 
 if __name__ == "__main__":
