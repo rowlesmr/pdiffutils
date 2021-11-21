@@ -4,6 +4,7 @@ Created on Sun May  2 19:45:57 2021
 
 @author: 184277J
 """
+from __future__ import annotations
 
 import math
 import os
@@ -12,7 +13,7 @@ import operator
 # import random
 # from timeit import default_timer as timer  # use as start = timer() ...  end = timer()
 from math import sqrt
-from typing import List
+from typing import List, Union
 
 
 def val_err_str(val: float, err: float) -> str:
@@ -59,7 +60,7 @@ class DiffractionDataPoint:
     def negate(self):
         self.x *= -1.0
 
-    def zeroOffset(self, offset):
+    def zeroOffset(self, offset: float):
         self.x += offset
 
     def __str__(self) -> str:
@@ -68,37 +69,37 @@ class DiffractionDataPoint:
     def __repr__(self):
         return f"XRayDataPoint({self.x}, {self.y}, {self.e})"
 
-    def __lt__(self, other):
+    def __lt__(self, other: DiffractionDataPoint):
         if isinstance(other, DiffractionDataPoint):
             return self.x < other.x
         else:
             return NotImplemented
 
-    def __le__(self, other):
+    def __le__(self, other: DiffractionDataPoint):
         if isinstance(other, DiffractionDataPoint):
             return self.x <= other.x
         else:
             return NotImplemented
 
-    def __eq__(self, other):
+    def __eq__(self, other: DiffractionDataPoint):
         if isinstance(other, DiffractionDataPoint):
             return math.isclose(self.x, other.x)
         else:
             return NotImplemented
 
-    def __ne__(self, other):
+    def __ne__(self, other: DiffractionDataPoint):
         if isinstance(other, DiffractionDataPoint):
             return not math.isclose(self.x, other.x)
         else:
             return NotImplemented
 
-    def __ge__(self, other):
+    def __ge__(self, other: DiffractionDataPoint):
         if isinstance(other, DiffractionDataPoint):
             return self.x >= other.x
         else:
             return NotImplemented
 
-    def __gt__(self, other):
+    def __gt__(self, other: DiffractionDataPoint):
         if isinstance(other, DiffractionDataPoint):
             return self.x > other.x
         else:
@@ -107,7 +108,7 @@ class DiffractionDataPoint:
     def __hash__(self):
         return hash((self.x, self.y, self.e))
 
-    def __mul__(self, other):
+    def __mul__(self, other: float) -> DiffractionDataPoint:
         """
         Overriding * operator to mean multipling intensities by an int or float
 
@@ -132,7 +133,7 @@ class DiffractionDataPoint:
                                     self.y * other,
                                     self.e * other)
 
-    def __imul__(self, other):
+    def __imul__(self, other: float) -> DiffractionDataPoint:
         """
         Overriding *= operator to mean multipling intensities by an int or float
 
@@ -158,7 +159,7 @@ class DiffractionDataPoint:
 
         return self
 
-    def __truediv__(self, other):
+    def __truediv__(self, other: float) -> DiffractionDataPoint:
         """
         Overriding / operator to mean dividing intensities by an int or float
 
@@ -183,7 +184,7 @@ class DiffractionDataPoint:
                                     self.y / other,
                                     self.e / other)
 
-    def __itruediv__(self, other):
+    def __itruediv__(self, other: float) -> DiffractionDataPoint:
         """
         Overriding /= operator to mean dividing intensities by an int or float
 
@@ -208,7 +209,7 @@ class DiffractionDataPoint:
         self.e /= other
         return self
 
-    def __floordiv__(self, other):
+    def __floordiv__(self, other: float) -> DiffractionDataPoint:
         """
         Overriding // operator to mean dividing intensities by an int or float
 
@@ -233,7 +234,7 @@ class DiffractionDataPoint:
                                     self.y // other,
                                     self.e // other)
 
-    def __ifloordiv__(self, other):
+    def __ifloordiv__(self, other: float) -> DiffractionDataPoint:
         """
         Overriding //= operator to mean dividing intensities by an int or float
 
@@ -258,15 +259,15 @@ class DiffractionDataPoint:
         self.e //= other
         return self
 
-    def _add_sub(self, other, operator):
+    def _add_sub(self, other: Union[float, DiffractionDataPoint], op: operator) -> DiffractionDataPoint:
         """
         helper method to override + and -
 
         Parameters
         ----------
-        other : float, int, or XRayDataPoint
+        other : float, int, or DiffractionDataPoint
             DESCRIPTION.
-        operator : TYPE
+        op : operator.add or operator.subtract
             DESCRIPTION.
 
         Returns
@@ -276,7 +277,7 @@ class DiffractionDataPoint:
         """
         if isinstance(other, (float, int)):
             return DiffractionDataPoint(self.x,
-                                        operator(self.y, other),
+                                        op(self.y, other),
                                         self.e)
 
         if not isinstance(other, DiffractionDataPoint):
@@ -284,19 +285,19 @@ class DiffractionDataPoint:
 
         if self == other:
             return DiffractionDataPoint(self.x,
-                                        operator(self.y, other.y),
+                                        op(self.y, other.y),
                                         math.sqrt(self.e ** 2 + other.e ** 2))
         else:
             raise ValueError(f"Angles are not equal: {self.x} & {other.x}.")
 
-    def __add__(self, other):
+    def __add__(self, other: Union[float, DiffractionDataPoint]) -> DiffractionDataPoint:
         """
         Overriding + operator to mean adding intensities together if the same angle
         Can also add a float or int. This will increase the intensity, but not alter the error
 
         Parameters
         ----------
-        other : XRayDataPoint.
+        other : DiffractionDataPoint.
 
         Returns
         -------
@@ -310,7 +311,7 @@ class DiffractionDataPoint:
         """
         return self._add_sub(other, operator.add)
 
-    def __sub__(self, other):
+    def __sub__(self, other: Union[float, DiffractionDataPoint]) -> DiffractionDataPoint:
         """
         Overriding - operator to mean adding intensities together if the same angle
         Can also add a float or int. This will increase the intensity, but not alter the error
@@ -331,7 +332,7 @@ class DiffractionDataPoint:
         """
         return self._add_sub(other, operator.sub)
 
-    def _iadd_isub(self, other, operator):
+    def _iadd_isub(self, other: Union[float, DiffractionDataPoint], op: operator) -> DiffractionDataPoint:
         """
         helper function
         Overriding  += and -=  operator to mean adding intensities together if the same angle
@@ -342,7 +343,8 @@ class DiffractionDataPoint:
 
         Parameters
         ----------
-        other : XRayDataPoint.
+        other : DiffractionDataPoint, float or int
+        op: operator.iadd or operator isub
 
         Returns
         -------
@@ -355,7 +357,7 @@ class DiffractionDataPoint:
 
         """
         if isinstance(other, (float, int)):
-            self.y = operator(self.y, other)
+            self.y = op(self.y, other)
             return self
 
         if not isinstance(other, DiffractionDataPoint):
@@ -363,11 +365,11 @@ class DiffractionDataPoint:
 
         if self.x != other.x:
             raise ValueError(f"Angles are not equal: {self.x} & {other.x}.")
-        self.y = operator(self.y, other.y)
+        self.y = op(self.y, other.y)
         self.e = math.sqrt(self.e ** 2 + other.e ** 2)
         return self
 
-    def __iadd__(self, other):
+    def __iadd__(self, other: Union[float, DiffractionDataPoint]) -> DiffractionDataPoint:
         """
         Overriding += operator to mean adding intensities together if the same angle
         Can also add a float or int. This will increase the intensity, but not alter the error
@@ -377,7 +379,7 @@ class DiffractionDataPoint:
 
         Parameters
         ----------
-        other : XRayDataPoint.
+        other : DiffractionDataPoint
 
         Returns
         -------
@@ -391,7 +393,7 @@ class DiffractionDataPoint:
         """
         return self._iadd_isub(other, operator.iadd)
 
-    def __isub__(self, other):
+    def __isub__(self, other: Union[float, DiffractionDataPoint]) -> DiffractionDataPoint:
         """
         Overriding -= operator to mean adding intensities together if the same angle
         Can also add a float or int. This will increase the intensity, but not alter the error
@@ -401,7 +403,7 @@ class DiffractionDataPoint:
 
         Parameters
         ----------
-        other : XRayDataPoint.
+        other : DiffractionDataPoint
 
         Returns
         -------
@@ -415,13 +417,13 @@ class DiffractionDataPoint:
         """
         return self._iadd_isub(other, operator.isub)
 
-    def __and__(self, other):
+    def __and__(self, other: DiffractionDataPoint) -> DiffractionDataPoint:
         """
         Overriding & operator to mean averaging intensities together if the same angle
 
         Parameters
         ----------
-        other : XRayDataPoint.
+        other : DiffractionDataPoint
 
         Returns
         -------
@@ -436,14 +438,14 @@ class DiffractionDataPoint:
         if not isinstance(other, DiffractionDataPoint):
             raise TypeError(f"Averaging with type {type(other)} is undefined.")
 
-        if self == other:
+        if self == other:  # remember I've overidden equality to mean "are the angles equal?"
             return DiffractionDataPoint(self.x,
                                         (self.y + other.y) / 2,
                                         math.sqrt(self.e ** 2 + other.e ** 2) / 2)
         else:
             raise ValueError(f"Angles are not equal: {self.x} & {other.x}")
 
-    def __iand__(self, other):
+    def __iand__(self, other: DiffractionDataPoint) -> DiffractionDataPoint:
         """
         Overriding &= operator to mean averaging intensities together if the same angle
 
@@ -451,7 +453,7 @@ class DiffractionDataPoint:
 
         Parameters
         ----------
-        other : XRayDataPoint.
+        other : DiffractionDataPoint
 
         Returns
         -------
@@ -535,7 +537,7 @@ class DiffractionPattern:
     def getData(self):
         return copy.deepcopy(self.diffpat)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.diffpat)
 
     def __str__(self):
@@ -568,7 +570,7 @@ class DiffractionPattern:
         """
         self.diffpat.sort()
 
-    def downsample(self, ds: float):
+    def downsample(self, ds: int):
         """
         Downsamples the number of angles by averaging them.
         ds == 2 gives half the number of angles, 3 gives one third, and so on.
@@ -580,9 +582,9 @@ class DiffractionPattern:
         -------
         new downsampled diffraction pattern
         """
-        a = self.getAngles()
-        i = self.getIntensities()
-        e = self.getErrors()
+        a = self.xs
+        i = self.ys
+        e = self.es
         r = []
 
         for j in range(0, len(a), ds):
@@ -591,7 +593,7 @@ class DiffractionPattern:
             e_new = sqrt(sum(map(lambda i: i * i, e[j:j + ds]))) / ds
             r.append(DiffractionDataPoint(a_new, i_new, e_new))
 
-        return DiffractionExperiment(r)
+        return DiffractionPattern(r)
 
     def split_on_zero(self):
         """
@@ -627,10 +629,10 @@ class DiffractionPattern:
 
         return (pos, neg)
 
-    def _add_and(self, other, operator):
+    def _add_and(self, other: DiffractionPattern, op: operator) -> DiffractionPattern:
         """
         This function is used by __add__ and __and__ to allow for + and &
-        to mean summing or averging diffraction patterns.
+        to mean summing or averaging diffraction patterns.
 
         The difference between the two functions is only a single operator, so
         to make it easier to maintain, I use the "operator" module to allow me
@@ -640,7 +642,7 @@ class DiffractionPattern:
         Parameters
         ----------
         other : DiffractionPattern.
-        operator: a function that acts as an operator
+        op: a function that acts as an operator
 
         Returns
         -------
@@ -653,7 +655,7 @@ class DiffractionPattern:
         TypeError: if you try to use the wrong other type
 
         """
-        if not isinstance(other, DiffractionExperiment):
+        if not isinstance(other, DiffractionPattern):
             raise TypeError(f"Addition with type {type(other)} is undefined.")
 
         # get deepcopy of the diffpats so I'm not plagued by pointer errors
@@ -684,15 +686,14 @@ class DiffractionPattern:
                 if p2 > p1:
                     break
                 elif p2 == p1:
-                    p1 = operator(p1, p2)  # this is the bit that adds the the two XRayDataPoints
+                    p1 = op(p1, p2)  # this is the bit that adds the the two DiffractionDataPoints
                     lst.pop(j)
             r.append(p1)
             i += 1
-        return DiffractionExperiment(r)
+        return DiffractionPattern(r)
 
-    def _iadd_iand(self, other, operator):
+    def _iadd_iand(self, other: DiffractionPattern, op: operator):
         """
-
         This function is used by __iadd__ and __iand__ to allow for + and &
         to mean summing or averaging diffraction patterns.
 
@@ -700,11 +701,10 @@ class DiffractionPattern:
         to make it easier to maintain, I use the "operator" module to allow me
         to pass in a function that acts as an operator
 
-
         Parameters
         ----------
         other : DiffractionPattern.
-        operator: a function that acts as an operator
+        op: a function that acts as an operator
 
         Returns
         -------
@@ -717,7 +717,7 @@ class DiffractionPattern:
         TypeError: if you try to use the wrong other type
 
         """
-        if not isinstance(other, DiffractionExperiment):
+        if not isinstance(other, DiffractionPattern):
             return NotImplemented
 
         # concatenate the two diffpat list and sort in increasing angle
@@ -743,12 +743,12 @@ class DiffractionPattern:
                 if p2 > p1:
                     break
                 elif p2 == p1:
-                    p1 = operator(p1, p2)  # this is the bit that adds the the two XRayDataPoints
+                    p1 = op(p1, p2)  # this is the bit that adds the the two DiffractionDataPoints
                     self.diffpat.pop(j)
             i += 1
         return self
 
-    def __mul__(self, other):
+    def __mul__(self, other: float) -> DiffractionPattern:
         """
         Overriding * operator to mean multipling intensities by an int or float
 
@@ -773,9 +773,9 @@ class DiffractionPattern:
 
         for i in range(len(r)):
             r[i] = r[i] * other
-        return DiffractionExperiment(r, do_deep_copy=False)
+        return DiffractionPattern(r)
 
-    def __truediv__(self, other):
+    def __truediv__(self, other: float) -> DiffractionPattern:
         """
         Overriding / operator to mean dividing intensities by an int or float
 
@@ -800,9 +800,9 @@ class DiffractionPattern:
 
         for i in range(len(r)):
             r[i] = r[i] / other
-        return DiffractionExperiment(r, do_deep_copy=False)
+        return DiffractionPattern(r)
 
-    def __floordiv__(self, other):
+    def __floordiv__(self, other: float) -> DiffractionPattern:
         """
         Overriding // operator to mean dividing intensities by an int or float
 
@@ -827,9 +827,9 @@ class DiffractionPattern:
 
         for i in range(len(r)):
             r[i] = r[i] // other
-        return DiffractionExperiment(r, do_deep_copy=False)
+        return DiffractionPattern(r)
 
-    def __add__(self, other):
+    def __add__(self, other: Union[float, DiffractionPattern]) -> DiffractionPattern:
         """
         Overriding + operator to mean adding diffraction pattern intensities together if the same angle
         or adding a float or int to all intensities
@@ -852,7 +852,7 @@ class DiffractionPattern:
             r = copy.deepcopy(self.diffpat)
             for i in range(len(r)):
                 r[i] = r[i] + other
-            return DiffractionExperiment(r, do_deep_copy=False)
+            return DiffractionPattern(r)
         elif isinstance(other, list):
             if len(other) != len(self.diffpat):
                 raise ValueError(
@@ -860,11 +860,11 @@ class DiffractionPattern:
             r = copy.deepcopy(self.diffpat)
             for i in range(len(r)):
                 r[i] = r[i] + other[i]
-            return DiffractionExperiment(r, do_deep_copy=False)
+            return DiffractionPattern(r)
         else:
             return self._add_and(other, operator.add)
 
-    def __sub__(self, other):
+    def __sub__(self, other: Union[float, DiffractionPattern]):
         """
         Overriding - operator to mean adding diffraction pattern intensities together if the same angle
         or adding a float or int to all intensities
@@ -887,7 +887,7 @@ class DiffractionPattern:
             r = copy.deepcopy(self.diffpat)
             for i in range(len(r)):
                 r[i] = r[i] - other
-            return DiffractionExperiment(r, do_deep_copy=False)
+            return DiffractionPattern(r)
         elif isinstance(other, list):
             if len(other) != len(self.diffpat):
                 raise ValueError(
@@ -895,7 +895,7 @@ class DiffractionPattern:
             r = copy.deepcopy(self.diffpat)
             for i in range(len(r)):
                 r[i] = r[i] - other[i]
-            return DiffractionExperiment(r, do_deep_copy=False)
+            return DiffractionPattern(r)
         else:
             return self._add_and(other, operator.sub)
 
@@ -1245,7 +1245,7 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
         return lst
 
     @staticmethod
-    def cubic_interp1d(x0, x, y, do_checks=True):
+    def cubic_interp1d(x0: Union[float, List[float]], x: List[float], y: List[float], do_checks: bool = True):
         """
         Interpolate a 1-D function using cubic splines.
           x0 : a float or 1d-list of floats to interpolate at
@@ -1279,22 +1279,22 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
                 if x[i - 1] >= x[i]:
                     raise ValueError("x is not in strictly increasing order.")
 
-        def diff(lst):
+        def diff(lst: List[float]) -> List[float]:
             """
             numpy.diff with default settings
             """
-            dim = len(lst) - 1
-            r = [0] * dim
-            for k in range(dim):
+            length = len(lst) - 1
+            r = [0.0] * length
+            for k in range(length):
                 r[k] = lst[k + 1] - lst[k]
             return r
 
-        def list_searchsorted(listToInsert, insertInto):
+        def list_searchsorted(listToInsert:List[float], insertInto:List[float])->List[int]:
             """
             numpy.searchsorted with default settings
             """
 
-            def float_searchsorted(floatToInsert, insertInto):
+            def float_searchsorted(floatToInsert: float, insertInto: List[float]) -> int:
                 """
                 Helper function
                 """
@@ -1305,11 +1305,11 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
 
             return [float_searchsorted(item, insertInto) for item in listToInsert]
 
-        def clip(lst, min_val, max_val, inPlace=False):
+        def clip(lst: List[float], min_val: float, max_val: float, in_place: bool = False) -> List[float]:
             """
             numpy.clip
             """
-            if not inPlace:
+            if not in_place:
                 lst = lst[:]
             for k in range(len(lst)):
                 if lst[k] < min_val:
@@ -1318,7 +1318,7 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
                     lst[k] = max_val
             return lst
 
-        def subtract(a, b):
+        def subtract(a: float, b: float) -> float:
             """
             returns a - b
             """
@@ -1465,7 +1465,7 @@ class DiffractionExperiment:
         """
         self.diffpats = [dp.sort() for dp in self.diffpats]
 
-    def downsample(self, ds: float):
+    def downsample(self, ds: int):
         """
         Downsamples the number of angles by averaging them.
         ds == 2 gives half the number of angles, 3 gives one third, and so on.
