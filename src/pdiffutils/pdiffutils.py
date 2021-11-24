@@ -13,7 +13,7 @@ import operator
 # import random
 # from timeit import default_timer as timer  # use as start = timer() ...  end = timer()
 from math import sqrt
-from typing import List, Union
+from typing import List, Union, Tuple
 
 
 def val_err_str(val: float, err: float) -> str:
@@ -63,7 +63,7 @@ class DiffractionDataPoint:
     def zeroOffset(self, offset: float):
         self.x += offset
 
-    def average_with(self, ddps: List[DiffractionDataPoint]) -> DiffractionDataPoint:
+    def average_with(self, ddps: List[DiffractionDataPoint], in_place: bool = True) -> DiffractionDataPoint:
         if not ddps:  # empty list
             return copy.deepcopy(self)
 
@@ -73,7 +73,13 @@ class DiffractionDataPoint:
             if ddp.x != self.x:
                 raise ValueError(f"trying to average data at {ddp.x} with data at {self.x}.")
             ddp_mean.increment(ddp)
-        return ddp_mean.get_result()
+
+        if in_place:
+            self.x = ddp_mean.get_result().x
+            self.y = ddp_mean.get_result().y
+            self.e = ddp_mean.get_result().e
+        else:
+            return ddp_mean.get_result()
 
     def __str__(self) -> str:
         return f"{self.x:.5f} {self.y:.3f} {self.e:.3f}"
@@ -440,7 +446,6 @@ class DiffractionPattern:
     This is a Diffraction Pattern.
     It is essentially a list of DiffractionDataPoints.
     It takes either a filename or a list of DiffractionDataPoints
-
     """
 
     def __init__(self, diffpat: List[DiffractionDataPoint] = None, filename: str = None, meta=None):
@@ -476,18 +481,21 @@ class DiffractionPattern:
     def reverse(self):
         self.diffpat.reverse()
 
-    def zeroOffset(self, offset: float):
-        for d in self.diffpat:
-            d.zeroOffset(offset)
+    def zeroOffset(self, offset: Union[float, List[float]]):
+        if isinstance(offset, float):
+            for d in self.diffpat:
+                d.zeroOffset(offset)
+        elif isinstance(offset, list):
+            if len(offset) != len(self.diffpat):
+                raise ValueError(f"Need {len(self.diffpat)} values. Was given {len(offset)} instead.")
+            for d, o in zip(self.diffpat, offset):
+                d.zeroOffset(o)
 
     def getMinAngle(self):
         return self.diffpat[0].x
 
     def getMaxAngle(self):
         return self.diffpat[-1].x
-
-    def getNumOfDataPoints(self):
-        return len(self.diffpat)
 
     def getData(self):
         return copy.deepcopy(self.diffpat)
@@ -505,7 +513,7 @@ class DiffractionPattern:
         s = f"{s[:-2]}\n], {self.filename}, {self.meta})"
         return s
 
-    def trim(self, min_x: float = -180, max_x: float = 180):
+    def trim(self, min_x: float = -180, max_x: float = 180, in_place: bool = True) -> None | DiffractionPattern:
         """
         Trims a diffraction pattern such that there exist no angles less
         than min_angle, and no angles greater than max_angle.
@@ -516,16 +524,27 @@ class DiffractionPattern:
             the minimum angle you want to see in your diffraction pattern. The default is -180.
         max_x : float, optional
             the maximum angle you want to see in your diffraction pattern. The default is 180.
+        in_place: bool, alter self, or return a new Diffractionpattern?
         """
-        self.diffpat = [xdp for xdp in self.diffpat if min_x <= xdp.x <= max_x]
+        dp = [xdp for xdp in self.diffpat if min_x <= xdp.x <= max_x]
 
-    def sort(self):
-        """
-        In-place sort of the diffraction pattern, based on angles
-        """
-        self.diffpat.sort()
+        if in_place:
+            self.diffpat = dp
+        else:
+            return DiffractionPattern(diffpat=dp)
 
-    def downsample(self, ds: int):
+    def sort(self, in_place: bool = True):
+        """
+        sort the diffraction pattern, based on angles
+        """
+        if in_place:
+            self.diffpat.sort()
+        else:
+            dp = copy.deepcopy(self.diffpat)
+            dp.sort()
+            return DiffractionPattern(diffpat=dp)
+
+    def downsample(self, ds: int, in_place: bool = True) -> None | DiffractionPattern:
         """
         Downsamples the number of angles by averaging them.
         ds == 2 gives half the number of angles, 3 gives one third, and so on.
@@ -545,12 +564,15 @@ class DiffractionPattern:
         for j in range(0, len(a), ds):
             a_new = sum(a[j:j + ds]) / ds
             i_new = sum(i[j:j + ds]) / ds
-            e_new = sqrt(sum(map(lambda i: i * i, e[j:j + ds]))) / ds
+            e_new = sqrt(sum(map(lambda k: k * k, e[j:j + ds]))) / ds
             r.append(DiffractionDataPoint(a_new, i_new, e_new))
 
-        return DiffractionPattern(r)
+        if in_place:
+            self.diffpat = r
+        else:
+            return DiffractionPattern(r)
 
-    def split_on_zero(self):
+    def split_on_zero(self) -> tuple[DiffractionPattern | None, DiffractionPattern | None]:
         """
         Gets a diffraction pattern that contains -ve and +ve angles, and returns two diffraction patterns:
         one from the +ve bit, and a negated version from the -ve side
@@ -582,9 +604,9 @@ class DiffractionPattern:
             neg.negate()
             neg.sort()
 
-        return (pos, neg)
+        return pos, neg
 
-    def average_with(self, dps: List[DiffractionPattern]):
+    def average_with(self, dps: List[DiffractionPattern], in_place: bool = True) -> None | DiffractionPattern:
         # get deepcopy of the diffpats so I'm not plagued by pointer errors
         src = copy.deepcopy(self.diffpat)
         for dp in dps:
@@ -601,14 +623,17 @@ class DiffractionPattern:
                 p2 = src[j]
                 if p2 > p1:
                     break
-                elif p2 == p1:
+                elif math.isclose(p2.x, p1.x):
                     tmp.append(p2)
                     j += 1
-            new_pnt = p1.average_with(tmp)
-            dest.append(new_pnt)
+            dest.append(p1.average_with(tmp, in_place=False))
             tmp = []
             i = j
-        return DiffractionPattern(diffpat=dest)
+
+        if in_place:
+            self.diffpat = dest
+        else:
+            return DiffractionPattern(diffpat=dest)
 
     def _add_and(self, other: DiffractionPattern, op: operator) -> DiffractionPattern:
         """
@@ -1335,10 +1360,7 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
 class DiffractionExperiment:
     """
     This is a Diffraction Experiment.
-
     It is essentially a list of DiffractionPatterns.
-
-
     """
 
     def __init__(self, diffpats: List[DiffractionPattern], filename: str = None, meta=None):
@@ -1386,7 +1408,8 @@ class DiffractionExperiment:
         s = f"{s[:-2]}\n], {self.filename}, {self.meta})"
         return s
 
-    def trim(self, min_angle: float = -180, max_angle: float = 180):
+    def trim(self, min_angle: Union[float, List[float]] = -180,
+             max_angle: Union[float, List[float]] = 180, in_place: bool = True) -> None | DiffractionExperiment:
         """
         Trims a diffraction pattern such that there exist no angles less
         than min_angle, and no angles greater than max_angle.
@@ -1398,15 +1421,32 @@ class DiffractionExperiment:
         max_angle : float, optional
             the maximum angle you want to see in your diffraction pattern. The default is 180.
         """
-        self.diffpats = [dp.trim(min_angle, max_angle) for dp in self.diffpats]
+        dps = []
+        if isinstance(min_angle, float) and isinstance(max_angle, float):
+            dps = [dp.trim(min_angle, max_angle, in_place=True) for dp in self.diffpats]
+        elif isinstance(min_angle, float) and isinstance(max_angle, list):
+            dps = [dp.trim(min_angle, max_x, in_place=True) for dp, max_x in zip(self.diffpats, max_angle)]
+        elif isinstance(min_angle, list) and isinstance(max_angle, float):
+            dps = [dp.trim(min_x, max_angle, in_place=True) for dp, min_x in zip(self.diffpats, min_angle)]
+        elif isinstance(min_angle, list) and isinstance(max_angle, list):
+            dps = [dp.trim(min_x, max_x, in_place=True) for dp, min_x, max_x in zip(self.diffpats, min_angle, max_angle)]
 
-    def sort(self):
+        if in_place:
+            self.diffpats = dps
+        else:
+            return DiffractionExperiment(diffpats=dps)
+
+    def sort(self, in_place: bool = True) -> None | DiffractionExperiment:
         """
         In-place sort of the diffraction pattern, based on angles
         """
-        self.diffpats = [dp.sort() for dp in self.diffpats]
+        dps = [dp.sort(in_place=in_place) for dp in self.diffpats]
+        if in_place:
+            self.diffpats = dps
+        else:
+            return DiffractionExperiment(diffpats=dps)
 
-    def downsample(self, ds: int):
+    def downsample(self, ds: int, in_place: bool = True) -> None | DiffractionExperiment:
         """
         Downsamples the number of angles by averaging them.
         ds == 2 gives half the number of angles, 3 gives one third, and so on.
@@ -1414,9 +1454,13 @@ class DiffractionExperiment:
         ----------
         ds an integer describing the factor by which to downsample.
         """
-        self.diffpats = [dp.downsample(ds) for dp in self.diffpats]
+        dps = [dp.downsample(ds, in_place=in_place) for dp in self.diffpats]
+        if in_place:
+            self.diffpats = dps
+        else:
+            return DiffractionExperiment(diffpats=dps)
 
-    def average_patterns(self, num: int, is_rolling: bool = True):
+    def average_patterns(self, num: int, is_rolling: bool = True, in_place: bool = True) -> None | DiffractionExperiment:
         """
         Averages num patterns. If rolling average, then
         patterns 1..num are averaged, then 2..num+1, 3--num+2 and so on.
@@ -1430,11 +1474,13 @@ class DiffractionExperiment:
 
         for i in range(0, len(self.diffpats) - num, range_step):
             dp = copy.deepcopy(self.diffpats[i])
-            for j in range(1, num):
-                dp += self.diffpats[i + j]
-            dp /= num
-            dps.append(dp)
-        self.diffpats = dps
+            tmp = [self.diffpats[i + j] for j in range(1, num)]
+            dps.append(dp.average_with(tmp))
+
+        if in_place:
+            self.diffpats = dps
+        else:
+            return DiffractionExperiment(diffpats=dps)
 
     def interpolate(self, step: float, new_x: List[float] = None):
         pass
@@ -1455,14 +1501,19 @@ class DiffractionExperiment:
 # --------------------------------------------------------------------------------------------------
 
 class DiffractionDataPointMean:
+    """
+    This is a way to average a whole bunch of diffraction points by adding them one-by-one to a list
+    and progressively calculating the average. You don't need to know how many you've added; this
+    keeps track of it. Copied from https://commons.apache.org/proper/commons-math/javadocs/api-2.2/src-html/org/apache/commons/math/stat/descriptive/moment/FirstMoment.html#line.76
+    """
 
     def __init__(self):
         self.n: int = 0  # counter to keep track of how many items you want to average
         self.x: float = float("nan")  # the x value of the ddp
-        self.m1_y: float = float("nan")  # the running average
+        self.m1_y: float = float("nan")  # the running average of the intensity
         self.dev_y: float = float("nan")  # the difference between the value you're adding and the current average
         self.nDev_y: float = float("nan")  # the differences divided by n
-        self.m1_e: float = float("nan")  # the running average
+        self.m1_e: float = float("nan")  # the running average of the square of the error
         self.dev_e: float = float("nan")  # the difference between the value you're adding and the current average
         self.nDev_e: float = float("nan")  # the differences divided by n
 
@@ -1507,7 +1558,7 @@ class DiffractionDataPointMean:
 class Read:
     """
     Reads in data from file into a DiffractionPattern
-    can read in XY, XYE files. Skips the line if it encounters a non-float thing.
+    can read in XY, XYE, DAT files. Skips the line if it encounters a non-float thing.
     """
 
     @staticmethod
