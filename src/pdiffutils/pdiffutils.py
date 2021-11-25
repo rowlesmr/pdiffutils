@@ -85,7 +85,7 @@ class DiffractionDataPoint:
         return f"{self.x:.5f} {self.y:.3f} {self.e:.3f}"
 
     def __repr__(self):
-        return f"XRayDataPoint({self.x}, {self.y}, {self.e})"
+        return f"DiffractionDataPoint({self.x}, {self.y}, {self.e})"
 
     def __lt__(self, other: DiffractionDataPoint):
         if isinstance(other, DiffractionDataPoint):
@@ -173,7 +173,7 @@ class DiffractionDataPoint:
             return NotImplemented
 
         self.y *= other
-        self.e *= other
+        self.e *= abs(other)
 
         return self
 
@@ -224,7 +224,7 @@ class DiffractionDataPoint:
             return NotImplemented
 
         self.y /= other
-        self.e /= other
+        self.e /= abs(other)
         return self
 
     def __floordiv__(self, other: float) -> DiffractionDataPoint:
@@ -250,7 +250,7 @@ class DiffractionDataPoint:
 
         return DiffractionDataPoint(self.x,
                                     self.y // other,
-                                    self.e // other)
+                                    self.e // abs(other))
 
     def __ifloordiv__(self, other: float) -> DiffractionDataPoint:
         """
@@ -274,7 +274,7 @@ class DiffractionDataPoint:
             return NotImplemented
 
         self.y //= other
-        self.e //= other
+        self.e //= abs(other)
         return self
 
     def _add_sub(self, other: Union[float, DiffractionDataPoint], op: operator) -> DiffractionDataPoint:
@@ -623,7 +623,7 @@ class DiffractionPattern:
                 p2 = src[j]
                 if p2 > p1:
                     break
-                elif math.isclose(p2.x, p1.x):
+                elif p2 == p1:
                     tmp.append(p2)
                     j += 1
             dest.append(p1.average_with(tmp, in_place=False))
@@ -1716,10 +1716,24 @@ class Write:
 
 
 def main():
-    dp = DiffractionPattern(filename=r"C:\Users\184277j\Documents\GitHub\pdiffutils\data\lab6_dia_p1_0000.xye")
-    idp = InterpolatedDiffractionPattern(0.00375, diffpat=dp.diffpat)
+    ddp1 = DiffractionDataPoint(5.01, 9.0, 3.0)
+    ddp2 = DiffractionDataPoint(5.01, 16.0, 4.0)
 
-    print(idp)
+    ddp1 *= 2
+    ddp1 *= -3
+    ddp1 /= 2
+    ddp1 /= -3
+    ddp1 //= 2
+    ddp2 //= -3
+    print(ddp2)
+    ddp1 += 2
+    ddp2 -= 2
+    ddp1 += ddp2
+    ddp2 -= ddp1
+
+    print(ddp2)
+    print(ddp2.e**2)
+    print(math.isclose(math.sqrt(3.0), ddp2.e))
 
 
 if __name__ == "__main__":
