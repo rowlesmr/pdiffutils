@@ -1032,7 +1032,7 @@ class DiffractionPattern:
 
 class InterpolatedDiffractionPattern(DiffractionPattern):
 
-    def __init__(self, diffpat: List[DiffractionDataPoint], interp_stepsize: float, filename: str = None, meta=None):
+    def __init__(self, interp_stepsize: float, diffpat: List[DiffractionDataPoint] = None, filename: str = None, meta=None):
 
         """
         Read in inital data in order to make everything.
@@ -1043,7 +1043,7 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
 
         Parameters
         ----------
-        data : a string representing a filename, or a list of XRayDataPoints
+        filename : a string representing a filename, or a list of XRayDataPoints
         interp_stepsize: a float giving the stepsize I want in the inerpolation
 
         Returns
@@ -1055,7 +1055,7 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
         self.diffpat = InterpolatedDiffractionPattern.spline(interp_stepsize, self)
 
     @staticmethod
-    def spline(step_spline, dp: DiffractionPattern):
+    def spline(step_spline, dp: DiffractionPattern) -> List[DiffractionDataPoint]:
         # print(f"Now splining {dp.filename} in steps of {step_spline}")
         IDP = InterpolatedDiffractionPattern
         # these will hold the full splined data once I've finished
@@ -1069,8 +1069,9 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
         es = dp.es
 
         # arbitrary choice of cut-off size -  If i encounter a stepsize
-        #   greater then 5*the average, then I'll assume that is the next module
+        # greater then 5*the average, then I'll assume that is the next module
         step_threshold = 5 * dp.ave_step_size
+        DROP_POINTS = 5
 
         # Now I start the spline process
         start_index = 0
@@ -1080,7 +1081,6 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
                 # this is the range of data I want to interpolate
                 #  I want to trim off a few datapoints either side of the module edge
                 #  so I don't have to deal with their noisy edges.
-                DROP_POINTS = 5
                 x_list = xs[start_index + DROP_POINTS:stop_index - DROP_POINTS]
                 y_list = ys[start_index + DROP_POINTS:stop_index - DROP_POINTS]
                 e_list = es[start_index + DROP_POINTS:stop_index - DROP_POINTS]
@@ -1094,57 +1094,12 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
                 x_spline += x_interp
                 y_spline += y_interp
                 e_spline += e_interp
-
                 start_index = stop_index
 
-        return [DiffractionDataPoint(x_spline[i], y_spline[i], e_spline[i]) for i in range(len(x_spline))]
+        return [DiffractionDataPoint(x_spl, y_spl, e_spl) for x_spl, y_spl, e_spl in zip(x_spline, y_spline, e_spline)]
 
     @staticmethod
-    def spline2(interp, dp):
-        """
-        Interpolates a given DiffractionPattern using the provided interp array.
-        Intensities _and_ errors are interpolated. This second one really should
-        be looked at properly to see how best to do it. But, for now, it works.
-
-        Parameters
-        ----------
-        interp : float list
-            what angles to I want to interpolate
-        dp : DiffractionPattern
-            the DiffractionPattern I want to interpolate
-
-        Raises
-        ------
-        ValueError
-            if the provided interpolation list contains angles
-            outside of the range of the data.
-
-        Returns
-        -------
-        r : list of XRayDataPoints
-            The interpolated data
-
-        """
-        angle = dp.xs
-        intensity = dp.ys
-        error = dp.es
-
-        # check limits on interpolation
-        if interp[0] < angle[0]:  # ie I'm interpolating before the data starts
-            raise ValueError(f"Trying to interpolate out of range: {interp[0]} < {angle[0]}")
-        elif interp[-1] > angle[-1]:  # ie I'm interpolating after the data ends
-            raise ValueError(f"Trying to interpolate out of range: {interp[-1]} > {angle[-1]}")
-        # interpolate intensity and error
-        intensity_interp = InterpolatedDiffractionPattern.cubic_interp1d(interp, angle, intensity)
-        error_interp = InterpolatedDiffractionPattern.cubic_interp1d(interp, angle, error)
-
-        return [
-            DiffractionDataPoint(interp[i], intensity_interp[i], error_interp[i])
-            for i in range(len(interp))
-        ]
-
-    @staticmethod
-    def generateInterpList(min_start, max_stop, step):
+    def generateInterpList(min_start: float, max_stop: float, step: float) -> List[float]:
         """
         Generate a list to use as the interpolation array.
 
@@ -1171,15 +1126,14 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
         Raises
         ------
 
-        ValueError is max_stop < min_start
+        ValueError if max_stop < min_start
 
         """
         if max_stop <= min_start:
-            raise ValueError("max_stop is less than min_start. This list must be strictly increasing.")
+            raise ValueError(f"{max_stop} is less than {min_start}. This list must be strictly increasing.")
 
         angle = 0.0
         i = 0
-
         # find the starting angle
         if min_start >= 0:
             while angle < min_start:
@@ -1196,7 +1150,6 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
 
         # build the list to return
         lst = []
-        i = angle // step + 1
         if max_stop > min_start:
             while angle < max_stop:
                 lst.append(angle)
@@ -1211,7 +1164,7 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
         return lst
 
     @staticmethod
-    def cubic_interp1d(x0: Union[float, List[float]], x: List[float], y: List[float], do_checks: bool = True):
+    def cubic_interp1d(x0: Union[float, List[float]], x: List[float], y: List[float], do_checks: bool = True) -> float | List[float]:
         """
         Interpolate a 1-D function using cubic splines.
           x0 : a float or 1d-list of floats to interpolate at
@@ -1255,21 +1208,21 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
                 r[k] = lst[k + 1] - lst[k]
             return r
 
-        def list_searchsorted(listToInsert: List[float], insertInto: List[float]) -> List[int]:
+        def list_searchsorted(list_to_insert: List[float], insert_into: List[float]) -> List[int]:
             """
             numpy.searchsorted with default settings
             """
 
-            def float_searchsorted(floatToInsert: float, insertInto: List[float]) -> int:
+            def float_searchsorted(float_to_insert: float, insert_into: List[float]) -> int:
                 """
                 Helper function
                 """
-                for i in range(len(insertInto)):
-                    if floatToInsert <= insertInto[i]:
+                for i in range(len(insert_into)):
+                    if float_to_insert <= insert_into[i]:
                         return i
-                return len(insertInto)
+                return len(insert_into)
 
-            return [float_searchsorted(item, insertInto) for item in listToInsert]
+            return [float_searchsorted(item, insert_into) for item in list_to_insert]
 
         def clip(lst: List[float], min_val: float, max_val: float, in_place: bool = False) -> List[float]:
             """
@@ -1301,7 +1254,7 @@ class InterpolatedDiffractionPattern(DiffractionPattern):
         # allocate buffer matrices
         Li: list = [0] * dim
         Li_1: list = [0] * (dim - 1)
-        z: list = [0] * dim
+        z: List[float] = [0] * dim
 
         # fill diagonals Li and Li-1 and solve [L][y] = [B]
         Li[0] = sqrt(2 * xdiff[0])
@@ -1482,8 +1435,12 @@ class DiffractionExperiment:
         else:
             return DiffractionExperiment(diffpats=dps)
 
-    def interpolate(self, step: float, new_x: List[float] = None):
-        pass
+    def interpolate(self, step: float, in_place: bool = True) -> None | DiffractionExperiment:
+        idps = [InterpolatedDiffractionPattern(step, dp.diffpat) for dp in self.diffp7sats]
+        if in_place:
+            self.diffpats = idps
+        else:
+            return DiffractionExperiment(diffpats=idps)
 
     def split_on_zero(self):
         """
@@ -1759,22 +1716,10 @@ class Write:
 
 
 def main():
-    dp1 = DiffractionPattern(filename=r"C:\Users\184277j\Documents\GitHub\pdiffutils\data\dp1.xy")
-    dp2 = DiffractionPattern(filename=r"C:\Users\184277j\Documents\GitHub\pdiffutils\data\dp2.xy")
-    dp3 = DiffractionPattern(filename=r"C:\Users\184277j\Documents\GitHub\pdiffutils\data\dp3.xy")
+    dp = DiffractionPattern(filename=r"C:\Users\184277j\Documents\GitHub\pdiffutils\data\lab6_dia_p1_0000.xye")
+    idp = InterpolatedDiffractionPattern(0.00375, diffpat=dp.diffpat)
 
-    # dp1                  dp2                   dp3
-    # 5.00000 2.100 1.414  5.00000 3.200 1.732   5.00000 5.300 2.236
-    # 5.01000 4.100 2.000  5.01000 4.200 2.000   5.01000 6.300 2.449
-    # 5.02000 4.100 2.000  5.02000 5.200 2.236   5.02000 5.300 2.236
-    # 5.03000 3.100 1.732  5.03000 5.200 2.236   5.03000 3.300 1.732
-    # 5.04000 6.100 2.449  5.04000 7.200 2.646   5.04000 7.300 2.646
-
-    # dp1 = DiffractionPattern(diffpat=[DiffractionDataPoint(5,2)])
-    # dp2 = DiffractionPattern(diffpat=[DiffractionDataPoint(5,3)])
-    # dp3 = DiffractionPattern(diffpat=[DiffractionDataPoint(5,5)])
-
-    print(dp1.average_with([dp2, dp3]))
+    print(idp)
 
 
 if __name__ == "__main__":
