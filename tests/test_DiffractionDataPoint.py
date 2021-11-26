@@ -1,5 +1,6 @@
 from pdiffutils import DiffractionDataPoint
 import math
+import pytest
 
 
 # remember, I've overridden ==
@@ -51,10 +52,15 @@ def test_average_with():
     ddp2 = DiffractionDataPoint(5.01, 4.0)
     ddp3 = DiffractionDataPoint(5.01, 5.0)
     ddp4 = DiffractionDataPoint(5.01, 7.0)
+    ddp5 = DiffractionDataPoint(5.02, 7.0)
 
     ddp1.average_with([ddp2, ddp3, ddp4])
-
     assert is_all_equal(ddp1, DiffractionDataPoint(5.01, 4.75, math.sqrt(19.0) / 4))
+    assert is_all_equal(ddp1.average_with([]), ddp1)
+
+    with pytest.raises(ValueError) as e_info:
+        ddp1.average_with([DiffractionDataPoint(5.02, 4.0)])
+        ddp1.average_with([ddp5])
 
 
 def test_comparisons():
@@ -70,10 +76,18 @@ def test_comparisons():
     assert ddp1 == ddp2
     assert ddp1 != ddp3
 
+    assert ddp1.__lt__(1) == NotImplemented
+    assert ddp1.__le__(1) == NotImplemented
+    assert ddp4.__gt__(1) == NotImplemented
+    assert ddp3.__ge__(1) == NotImplemented
+    assert ddp1.__eq__(1) == NotImplemented
+    assert ddp1.__ne__(1) == NotImplemented
+
 
 def test_operators():
     ddp1 = DiffractionDataPoint(5.01, 9.0, 3.0)
     ddp2 = DiffractionDataPoint(5.01, 16.0, 4.0)
+    ddp3 = DiffractionDataPoint(5.02, 16.0, 4.0)
 
     assert is_all_equal(ddp1 * 2, DiffractionDataPoint(5.01, 18.0, 6.0))
     assert is_all_equal(ddp1 * -2, DiffractionDataPoint(5.01, -18.0, 6.0))
@@ -86,10 +100,22 @@ def test_operators():
     assert is_all_equal(ddp1 + ddp2, DiffractionDataPoint(5.01, 25.0, 5.0))
     assert is_all_equal(ddp1 - ddp2, DiffractionDataPoint(5.01, -7.0, 5.0))
 
+    with pytest.raises(TypeError) as e_info:
+        _ = ddp1 * ddp2
+        _ = ddp1 / ddp2
+        _ = ddp1 // ddp2
+        _ = ddp1 + [1, 2, 3]
+        _ = ddp1 - [4, 5, 6]
+
+    with pytest.raises(ValueError) as e_info:
+        _ = ddp1 + ddp3
+        _ = ddp1 - ddp3
+
 
 def test_ioperators():
     ddp1 = DiffractionDataPoint(5.01, 9.0, 3.0)
     ddp2 = DiffractionDataPoint(5.01, 16.0, 4.0)
+    ddp3 = DiffractionDataPoint(5.02, 16.0, 4.0)
 
     ddp1 *= 2
     assert is_all_equal(ddp1, DiffractionDataPoint(5.01, 18.0, 6.0))
@@ -115,3 +141,14 @@ def test_ioperators():
     assert is_all_equal(ddp1, DiffractionDataPoint(5.01, -2, math.sqrt(2)))
     ddp2 -= ddp1
     assert is_all_equal(ddp2, DiffractionDataPoint(5.01, -6, math.sqrt(3)))
+
+    with pytest.raises(TypeError) as e_info:
+        ddp1 *= ddp2
+        ddp1 /= ddp2
+        ddp1 //= ddp2
+        ddp1 += [1, 2, 3]
+        ddp1 -= [2, 4, 5]
+
+    with pytest.raises(ValueError) as e_info:
+        ddp1 += ddp3
+        ddp1 -= ddp3

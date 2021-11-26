@@ -13,7 +13,7 @@ import operator
 # import random
 # from timeit import default_timer as timer  # use as start = timer() ...  end = timer()
 from math import sqrt
-from typing import List, Union, Tuple
+from typing import List, Union
 
 
 def val_err_str(val: float, err: float) -> str:
@@ -21,7 +21,7 @@ def val_err_str(val: float, err: float) -> str:
     Get a float representation of a value/error pair and create a string representation
     12.345 +/- 1.23 --> 12.3(12)
     12.345 +/- 0.012 -> 12.345(12
-    12345 +/- 654  ---> 12300(650)
+    12345 +/- 654  ---> 12340(650)
     :param val: float representing the value
     :param err: float representing the error in the value
     :return: a string representation of the value/error pair
@@ -446,6 +446,8 @@ class DiffractionPattern:
     This is a Diffraction Pattern.
     It is essentially a list of DiffractionDataPoints.
     It takes either a filename or a list of DiffractionDataPoints
+
+    the x ordinates should be ordered such that they increase monotonically
     """
 
     def __init__(self, diffpat: List[DiffractionDataPoint] = None, filename: str = None, meta=None):
@@ -467,9 +469,9 @@ class DiffractionPattern:
         self.diffpat = Read.read(filename) if diffpat is None else diffpat
         self.meta = meta  # any information at all about this diffraction pattern. Can be anything of any type.
 
-        self.xs = [xdp.x for xdp in self.diffpat]
-        self.ys = [xdp.y for xdp in self.diffpat]
-        self.es = [xdp.e for xdp in self.diffpat]
+        self.xs = [ddp.x for ddp in self.diffpat]
+        self.ys = [ddp.y for ddp in self.diffpat]
+        self.es = [ddp.e for ddp in self.diffpat]
 
         step_sizes = [j - i for i, j in zip(self.xs[:-1], self.xs[1:])]
         self.ave_step_size = sum(step_sizes) / len(step_sizes) if len(step_sizes) > 1 else 0
@@ -481,7 +483,7 @@ class DiffractionPattern:
     def reverse(self):
         self.diffpat.reverse()
 
-    def zeroOffset(self, offset: Union[float, List[float]]):
+    def zero_offset(self, offset: Union[float, List[float]]):
         if isinstance(offset, float):
             for d in self.diffpat:
                 d.zeroOffset(offset)
@@ -490,15 +492,6 @@ class DiffractionPattern:
                 raise ValueError(f"Need {len(self.diffpat)} values. Was given {len(offset)} instead.")
             for d, o in zip(self.diffpat, offset):
                 d.zeroOffset(o)
-
-    def getMinAngle(self):
-        return self.diffpat[0].x
-
-    def getMaxAngle(self):
-        return self.diffpat[-1].x
-
-    def getData(self):
-        return copy.deepcopy(self.diffpat)
 
     def __len__(self) -> int:
         return len(self.diffpat)
@@ -580,8 +573,8 @@ class DiffractionPattern:
         -------
         A tuple containing two diffraction patterns. The first is from the +ve side, the second from the -ve side
         """
-        min_ = self.getMinAngle()
-        max_ = self.getMaxAngle()
+        min_ = self.diffpat[0].x
+        max_ = self.diffpat[-1].x
         do_pos = False  # which angles do I do? positive? negative?
         do_neg = False
         pos = None
@@ -602,7 +595,7 @@ class DiffractionPattern:
             neg = copy.deepcopy(self)
             neg.trim(-180, -0.0001)
             neg.negate()
-            neg.sort()
+            neg.reverse()
 
         return pos, neg
 
@@ -635,7 +628,7 @@ class DiffractionPattern:
         else:
             return DiffractionPattern(diffpat=dest)
 
-    def _add_and(self, other: DiffractionPattern, op: operator) -> DiffractionPattern:
+    def _add_sub(self, other: DiffractionPattern, op: operator) -> DiffractionPattern:
         """
         This function is used by __add__ and __and__ to allow for + and &
         to mean summing or averaging diffraction patterns.
@@ -675,7 +668,6 @@ class DiffractionPattern:
         # the list of XRayDataPoints is now sorted in ascending order
         # an XDP == XDP iff the angles are equal
         i = 0
-        j = 0
         r = []
 
         # This gets a point (p1) in the sorted, concatenated list and compares it with the next point (p2)
@@ -698,10 +690,10 @@ class DiffractionPattern:
             i += 1
         return DiffractionPattern(diffpat=r)
 
-    def _iadd_iand(self, other: DiffractionPattern, op: operator):
+    def _iadd_isub(self, other: DiffractionPattern, op: operator):
         """
-        This function is used by __iadd__ and __iand__ to allow for + and &
-        to mean summing or averaging diffraction patterns.
+        This function is used by __iadd__ and __isub__ to allow for + and -
+        to mean summing or subtracting diffraction patterns.
 
         The difference between the two functions is only a single operator, so
         to make it easier to maintain, I use the "operator" module to allow me
@@ -828,14 +820,10 @@ class DiffractionPattern:
         """
         if not isinstance(other, (float, int)):
             raise TypeError(f"Division with type {type(other)} is undefined.")
-
-        r = copy.deepcopy(self.diffpat)
-
-        for i in range(len(r)):
-            r[i] = r[i] // other
+        r = [ddp // other for ddp in self.diffpat]
         return DiffractionPattern(diffpat=r)
 
-    def __add__(self, other: Union[float, DiffractionPattern]) -> DiffractionPattern:
+    def __add__(self, other: Union[float, List[float], DiffractionPattern]) -> DiffractionPattern:
         """
         Overriding + operator to mean adding diffraction pattern intensities together if the same angle
         or adding a float or int to all intensities
@@ -868,9 +856,9 @@ class DiffractionPattern:
                 r[i] = r[i] + other[i]
             return DiffractionPattern(diffpat=r)
         else:
-            return self._add_and(other, operator.add)
+            return self._add_sub(other, operator.add)
 
-    def __sub__(self, other: Union[float, DiffractionPattern]):
+    def __sub__(self, other: Union[float, List[float], DiffractionPattern]):
         """
         Overriding - operator to mean adding diffraction pattern intensities together if the same angle
         or adding a float or int to all intensities
@@ -903,7 +891,7 @@ class DiffractionPattern:
                 r[i] = r[i] - other[i]
             return DiffractionPattern(diffpat=r)
         else:
-            return self._add_and(other, operator.sub)
+            return self._add_sub(other, operator.sub)
 
     def __iadd__(self, other):
         """
@@ -938,7 +926,7 @@ class DiffractionPattern:
                 self.diffpat[i] += other[i]
             return self
         else:
-            return self._iadd_iand(other, operator.iadd)
+            return self._iadd_isub(other, operator.iadd)
 
     def __isub__(self, other):
         """
@@ -973,7 +961,31 @@ class DiffractionPattern:
                 self.diffpat[i] -= other[i]
             return self
         else:
-            return self._iadd_iand(other, operator.isub)
+            return self._iadd_isub(other, operator.isub)
+
+    def __imul__(self, other):
+        """
+        Overriding *= operator to mean multiplying intensities by an int or float
+
+        Parameters
+        ----------
+        other : int or float.
+
+        Returns
+        -------
+        self
+
+        Raises
+        ------
+        ValueError if wrong type or angles not equal used.
+
+        """
+        if not isinstance(other, (float, int)):
+            raise TypeError(f"Multiplication with type {type(other)} is undefined.")
+
+        for i in range(len(self.diffpat)):
+            self.diffpat[i] *= other
+        return self
 
     def __itruediv__(self, other):
         """
@@ -1323,7 +1335,9 @@ class DiffractionExperiment:
 
         Parameters
         ----------
-        data : a string representing a filename, or a list of XRayDataPoints
+        diffpats : an array of DiffractionPatterns
+        filename : a filename of a file that contains many diffraction patterns
+        meta: any information at all you wish to associate with the DiffractionExperiment
 
         Returns
         -------
@@ -1343,10 +1357,7 @@ class DiffractionExperiment:
 
     def zeroOffset(self, offset: float):
         for d in self.diffpats:
-            d.zeroOffset(offset)
-
-    def getData(self):
-        return copy.deepcopy(self.diffpats)
+            d.zero_offset(offset)
 
     def __len__(self):
         return len(self.diffpats)
@@ -1436,7 +1447,7 @@ class DiffractionExperiment:
             return DiffractionExperiment(diffpats=dps)
 
     def interpolate(self, step: float, in_place: bool = True) -> None | DiffractionExperiment:
-        idps = [InterpolatedDiffractionPattern(step, dp.diffpat) for dp in self.diffp7sats]
+        idps = [InterpolatedDiffractionPattern(step, dp.diffpat) for dp in self.diffpats]
         if in_place:
             self.diffpats = idps
         else:
@@ -1716,24 +1727,7 @@ class Write:
 
 
 def main():
-    ddp1 = DiffractionDataPoint(5.01, 9.0, 3.0)
-    ddp2 = DiffractionDataPoint(5.01, 16.0, 4.0)
-
-    ddp1 *= 2
-    ddp1 *= -3
-    ddp1 /= 2
-    ddp1 /= -3
-    ddp1 //= 2
-    ddp2 //= -3
-    print(ddp2)
-    ddp1 += 2
-    ddp2 -= 2
-    ddp1 += ddp2
-    ddp2 -= ddp1
-
-    print(ddp2)
-    print(ddp2.e**2)
-    print(math.isclose(math.sqrt(3.0), ddp2.e))
+    print(isinstance((1, 2, 3), list))
 
 
 if __name__ == "__main__":
