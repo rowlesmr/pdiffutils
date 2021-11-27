@@ -101,15 +101,20 @@ def test_operators():
     assert is_all_equal(ddp1 - ddp2, DiffractionDataPoint(5.01, -7.0, 5.0))
 
     with pytest.raises(TypeError) as e_info:
-        _ = ddp1 * ddp2
-        _ = ddp1 / ddp2
-        _ = ddp1 // ddp2
-        _ = ddp1 + [1, 2, 3]
-        _ = ddp1 - [4, 5, 6]
+        a = ddp1 * ddp2
+    with pytest.raises(TypeError) as e_info:
+        b = ddp1 / ddp2
+    with pytest.raises(TypeError) as e_info:
+        c = ddp1 // ddp2
+    with pytest.raises(TypeError) as e_info:
+        d = ddp1 + [1, 2, 3]
+    with pytest.raises(TypeError) as e_info:
+        e = ddp1 - [4, 5, 6]
 
     with pytest.raises(ValueError) as e_info:
-        _ = ddp1 + ddp3
-        _ = ddp1 - ddp3
+        f = ddp1 + ddp3
+    with pytest.raises(ValueError) as e_info:
+        g = ddp1 - ddp3
 
 
 def test_ioperators():
@@ -144,11 +149,16 @@ def test_ioperators():
 
     with pytest.raises(TypeError) as e_info:
         ddp1 *= ddp2
+    with pytest.raises(TypeError) as e_info:
         ddp1 /= ddp2
+    with pytest.raises(TypeError) as e_info:
         ddp1 //= ddp2
+    with pytest.raises(TypeError) as e_info:
         ddp1 += [1, 2, 3]
+    with pytest.raises(TypeError) as e_info:
         ddp1 -= [2, 4, 5]
 
     with pytest.raises(ValueError) as e_info:
         ddp1 += ddp3
+    with pytest.raises(ValueError) as e_info:
         ddp1 -= ddp3

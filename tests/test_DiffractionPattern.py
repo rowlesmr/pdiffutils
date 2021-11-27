@@ -8,7 +8,7 @@ import operator
 
 
 # remember, I've overridden ==
-def is_all_equal(d1, d2):
+def is_all_equal(d1: DiffractionPattern, d2: DiffractionPattern):
     return not any(
         not math.isclose(p1.x, p2.x)
         or not math.isclose(p1.y, p2.y)
@@ -255,13 +255,18 @@ def test_operators():
 
     with pytest.raises(TypeError) as e_info:
         _ = dp1 * dp2
+    with pytest.raises(TypeError) as e_info:
         _ = dp1 / dp2
+    with pytest.raises(TypeError) as e_info:
         _ = dp1 // dp2
+    with pytest.raises(TypeError) as e_info:
         _ = dp1 + (1, 2, 3)
+    with pytest.raises(TypeError) as e_info:
         _ = dp1 - (1, 2, 3)
 
     with pytest.raises(ValueError) as e_info:
         _ = dp1 + [1, 2, 3]
+    with pytest.raises(ValueError) as e_info:
         _ = dp1 - [1, 2, 3]
 
 
@@ -330,11 +335,16 @@ def test_ioperators():
 
     with pytest.raises(TypeError) as e_info:
         dp1 *= dp2
+    with pytest.raises(TypeError) as e_info:
         dp1 /= dp2
+    with pytest.raises(TypeError) as e_info:
         dp1 //= dp2
+    with pytest.raises(TypeError) as e_info:
         dp1 += (1, 2, 3)
+    with pytest.raises(TypeError) as e_info:
         dp1 -= (1, 2, 3)
 
     with pytest.raises(ValueError) as e_info:
         dp1 += [1, 2, 3]
+    with pytest.raises(ValueError) as e_info:
         dp1 -= [1, 2, 3]

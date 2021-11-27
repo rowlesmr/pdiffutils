@@ -1355,7 +1355,7 @@ class DiffractionExperiment:
         for d in self.diffpats:
             d.reverse()
 
-    def zeroOffset(self, offset: float):
+    def zero_offset(self, offset: float):
         for d in self.diffpats:
             d.zero_offset(offset)
 
@@ -1373,7 +1373,8 @@ class DiffractionExperiment:
         return s
 
     def trim(self, min_angle: Union[float, List[float]] = -180,
-             max_angle: Union[float, List[float]] = 180, in_place: bool = True) -> None | DiffractionExperiment:
+             max_angle: Union[float, List[float]] = 180,
+             in_place: bool = True) -> None | DiffractionExperiment:
         """
         Trims a diffraction pattern such that there exist no angles less
         than min_angle, and no angles greater than max_angle.
@@ -1404,7 +1405,7 @@ class DiffractionExperiment:
         """
         In-place sort of the diffraction pattern, based on angles
         """
-        dps = [dp.sort(in_place=in_place) for dp in self.diffpats]
+        dps = [dp.sort(in_place=False) for dp in self.diffpats]
         if in_place:
             self.diffpats = dps
         else:
@@ -1418,7 +1419,7 @@ class DiffractionExperiment:
         ----------
         ds an integer describing the factor by which to downsample.
         """
-        dps = [dp.downsample(ds, in_place=in_place) for dp in self.diffpats]
+        dps = [dp.downsample(ds, in_place=False) for dp in self.diffpats]
         if in_place:
             self.diffpats = dps
         else:
@@ -1727,7 +1728,39 @@ class Write:
 
 
 def main():
-    print(isinstance((1, 2, 3), list))
+    diffpat1 = [DiffractionDataPoint(5.00, 2.1),
+                DiffractionDataPoint(5.01, 4.1),
+                DiffractionDataPoint(5.02, 4.1),
+                DiffractionDataPoint(5.03, 3.1),
+                DiffractionDataPoint(5.04, 6.1)]
+    dp1 = DiffractionPattern(diffpat=diffpat1)
+    diffpat2 = [DiffractionDataPoint(5.00, 4.2),
+                DiffractionDataPoint(5.01, 2.2),
+                DiffractionDataPoint(5.02, 4.2),
+                DiffractionDataPoint(5.03, 3.2),
+                DiffractionDataPoint(5.04, 5.2)]
+    dp2 = DiffractionPattern(diffpat=diffpat2)
+    de1 = DiffractionExperiment(diffpats=[dp1, dp2])
+    de1.zero_offset(0.1)
+
+    diffpat3 = [DiffractionDataPoint(5.10, 2.1),
+                DiffractionDataPoint(5.11, 4.1),
+                DiffractionDataPoint(5.12, 4.1),
+                DiffractionDataPoint(5.13, 3.1),
+                DiffractionDataPoint(5.14, 6.1)]
+    dp3 = DiffractionPattern(diffpat=diffpat3)
+
+    diffpat4 = [DiffractionDataPoint(5.10, 4.2),
+                DiffractionDataPoint(5.11, 2.2),
+                DiffractionDataPoint(5.12, 4.2),
+                DiffractionDataPoint(5.13, 3.2),
+                DiffractionDataPoint(5.14, 5.2)]
+    dp4 = DiffractionPattern(diffpat=diffpat4)
+    de2 = DiffractionExperiment(diffpats=[dp3, dp4])
+
+
+    print(f"{de1=}")
+    print(f"{de2=}")
 
 
 if __name__ == "__main__":
