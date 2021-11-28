@@ -449,6 +449,7 @@ class DiffractionPattern:
 
     the x ordinates should be ordered such that they increase monotonically
     """
+    DROP_POINTS_IN_SPLINE = 5
 
     def __init__(self, diffpat: List[DiffractionDataPoint] = None, filename: str = None, meta=None):
         """
@@ -627,6 +628,230 @@ class DiffractionPattern:
             self.diffpat = dest
         else:
             return DiffractionPattern(diffpat=dest)
+
+    def interpolate(self, step_size: float, in_place: bool = True) -> None | DiffractionPattern:
+        DP = DiffractionPattern
+        # these will hold the full splined data once I've finished
+        x_spline = []
+        y_spline = []
+        e_spline = []
+
+        # arbitrary choice of cut-off size -  If i encounter a stepsize
+        # greater then 5*the average, then I'll assume that is the next module
+        step_threshold = 5 * self.ave_step_size
+
+        # Now I start the spline process
+        start_index = 0
+        for stop_index, i in enumerate(range(1, len(self.xs)), start=1):
+            step = self.xs[i] - self.xs[i - 1]
+            if step >= step_threshold or i == len(self.xs) - 1:
+                # this is the range of data I want to interpolate
+                #  I want to trim off a few datapoints either side of the module edge
+                #  so I don't have to deal with their noisy edges.
+                x_list = self.xs[start_index + DP.DROP_POINTS_IN_SPLINE:stop_index - DP.DROP_POINTS_IN_SPLINE]
+                y_list = self.ys[start_index + DP.DROP_POINTS_IN_SPLINE:stop_index - DP.DROP_POINTS_IN_SPLINE]
+                e_list = self.es[start_index + DP.DROP_POINTS_IN_SPLINE:stop_index - DP.DROP_POINTS_IN_SPLINE]
+
+                # this is the interpolated data
+                x_interp = DP._generateInterpList(x_list[0], x_list[-1], step_size)
+                y_interp = DP._cubic_interp1d(x_interp, x_list, y_list)
+                e_interp = DP._cubic_interp1d(x_interp, x_list, e_list)
+
+                # put the just-interpolated-data into the whole list of data to be used to make the new DP
+                x_spline += x_interp
+                y_spline += y_interp
+                e_spline += e_interp
+                start_index = stop_index
+        r = [DiffractionDataPoint(x_spl, y_spl, e_spl) for x_spl, y_spl, e_spl in zip(x_spline, y_spline, e_spline)]
+
+        if in_place:
+            self.diffpat = r
+        else:
+            return DiffractionPattern(diffpat=r)
+
+    @staticmethod
+    def _generateInterpList(min_start: float, max_stop: float, step_size: float) -> List[float]:
+        """
+        Generate a list to use as the interpolation array.
+
+        The steps are generated from 0, with m
+
+        Step size is always positive
+        min_start < max_stop
+
+        Parameters
+        ----------
+        min_start : float
+            The minimum value the start angle could take on
+        step_size : float, positive
+            the step size between angles.
+        max_stop : float > min_start
+            The maximum value the stop angle could take on
+
+        Returns
+        -------
+        A list of floats from ~min_start to ~max_stop in steps of step.
+        The actual start and stop angles will always be in the range
+        [min_start, max_stop]
+
+        Raises
+        ------
+
+        ValueError if max_stop < min_start
+        ValueError if step_size <= 0.0
+
+        """
+        if max_stop <= min_start:
+            raise ValueError(f"{max_stop} is less than {min_start}. This list must be strictly increasing.")
+        if step_size <= 0.0:
+            raise ValueError(f"{step_size} is less than zero. Steps must be positive")
+
+        min_angle = step_size * int(min_start // step_size + 1)
+        max_angle = step_size * int(max_stop // step_size)
+        steps = int(round((max_angle - min_angle) / step_size + 1, 0))
+        return [min_angle + i*step_size for i in range(steps)]
+
+    @staticmethod
+    def _cubic_interp1d(x0: Union[float, List[float]], x: List[float], y: List[float], do_checks: bool = True) -> float | List[float]:
+        """
+        Interpolate a 1-D function using cubic splines.
+          x0 : a float or 1d-list of floats to interpolate at
+          x  : a 1-D list of floats sorted in increasing order
+          y  : a 1-D list of floats. The length of y must be equal to the length of x.
+
+        Implement a trick to generate at first step the cholesky matrice L of
+        the tridiagonal matrice A (thus L is a bidiagonal matrice that
+        can be solved in two distinct loops).
+
+        additional ref: www.math.uh.edu/~jingqiu/math4364/spline.pdf
+        # original function code at: https://stackoverflow.com/a/48085583/36061
+
+        This function is licenced under: Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0)
+        https://creativecommons.org/licenses/by-sa/3.0/
+        Original Author raphael valentin
+        Date 3 Jan 2018
+
+        Modifications made to remove numpy dependencies; all sub-functions by MR
+
+        This function, and all sub-functions, are licenced under: Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0)
+
+        Mod author: Matthew Rowles
+        Date 3 May 2021
+        """
+        if do_checks:
+            if len(x) != len(y):
+                raise ValueError(f"Length of x ({len(x)}) != length of y ({len(y)}).")
+
+            for i in range(1, len(x)):
+                if x[i - 1] >= x[i]:
+                    raise ValueError("x is not in strictly increasing order.")
+
+        def diff(lst: List[float]) -> List[float]:
+            """
+            numpy.diff with default settings
+            """
+            length = len(lst) - 1
+            r = [0.0] * length
+            for k in range(length):
+                r[k] = lst[k + 1] - lst[k]
+            return r
+
+        def list_searchsorted(list_to_insert: List[float], insert_into: List[float]) -> List[int]:
+            """
+            numpy.searchsorted with default settings
+            """
+
+            def float_searchsorted(float_to_insert: float, insert_into: List[float]) -> int:
+                """
+                Helper function
+                """
+                for i in range(len(insert_into)):
+                    if float_to_insert <= insert_into[i]:
+                        return i
+                return len(insert_into)
+
+            return [float_searchsorted(item, insert_into) for item in list_to_insert]
+
+        def clip(lst: List[float], min_val: float, max_val: float, in_place: bool = False) -> List[float]:
+            """
+            numpy.clip
+            """
+            if not in_place:
+                lst = lst[:]
+            for k in range(len(lst)):
+                if lst[k] < min_val:
+                    lst[k] = min_val
+                elif lst[k] > max_val:
+                    lst[k] = max_val
+            return lst
+
+        def subtract(a: float, b: float) -> float:
+            """
+            returns a - b
+            """
+            return a - b
+
+        if type(x0) is float:
+            x0 = [x0]
+
+        dim = len(x)
+
+        xdiff = diff(x)
+        ydiff = diff(y)
+
+        # allocate buffer matrices
+        Li: list = [0] * dim
+        Li_1: list = [0] * (dim - 1)
+        z: List[float] = [0] * dim
+
+        # fill diagonals Li and Li-1 and solve [L][y] = [B]
+        Li[0] = sqrt(2 * xdiff[0])
+        Li_1[0] = 0.0
+        B0 = 0.0  # natural boundary
+        z[0] = B0 / Li[0]
+
+        for i in range(1, dim - 1, 1):
+            Li_1[i] = xdiff[i - 1] / Li[i - 1]
+            Li[i] = sqrt(2 * (xdiff[i - 1] + xdiff[i]) - Li_1[i - 1] * Li_1[i - 1])
+            Bi = 6 * (ydiff[i] / xdiff[i] - ydiff[i - 1] / xdiff[i - 1])
+            z[i] = (Bi - Li_1[i - 1] * z[i - 1]) / Li[i]
+
+        i = dim - 1
+        Li_1[i - 1] = xdiff[-1] / Li[i - 1]
+        Li[i] = sqrt(2 * xdiff[-1] - Li_1[i - 1] * Li_1[i - 1])
+        Bi = 0.0  # natural boundary
+        z[i] = (Bi - Li_1[i - 1] * z[i - 1]) / Li[i]
+
+        # solve [L.T][x] = [y]
+        i = dim - 1
+        z[i] = z[i] / Li[i]
+        for i in range(dim - 2, -1, -1):
+            z[i] = (z[i] - Li_1[i - 1] * z[i + 1]) / Li[i]
+
+        # find index
+        index = list_searchsorted(x0, x)
+        index = clip(index, 1, dim - 1)
+
+        xi1 = [x[num] for num in index]
+        xi0 = [x[num - 1] for num in index]
+        yi1 = [y[num] for num in index]
+        yi0 = [y[num - 1] for num in index]
+        zi1 = [z[num] for num in index]
+        zi0 = [z[num - 1] for num in index]
+        hi1 = list(map(subtract, xi1, xi0))
+
+        # calculate cubic - all element-wise multiplication
+        f0 = [0] * len(hi1)
+        for j in range(len(f0)):
+            f0[j] = zi0[j] / (6 * hi1[j]) * (xi1[j] - x0[j]) ** 3 + \
+                    zi1[j] / (6 * hi1[j]) * (x0[j] - xi0[j]) ** 3 + \
+                    (yi1[j] / hi1[j] - zi1[j] * hi1[j] / 6) * (x0[j] - xi0[j]) + \
+                    (yi0[j] / hi1[j] - zi0[j] * hi1[j] / 6) * (xi1[j] - x0[j])
+
+        # let's me return a float if a float was put in as x0
+        if len(f0) == 1:
+            f0 = f0[0]
+        return f0
 
     def _add_sub(self, other: DiffractionPattern, op: operator) -> DiffractionPattern:
         """
@@ -1042,286 +1267,6 @@ class DiffractionPattern:
 # --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
 
-class InterpolatedDiffractionPattern(DiffractionPattern):
-
-    def __init__(self, interp_stepsize: float, diffpat: List[DiffractionDataPoint] = None, filename: str = None, meta=None):
-
-        """
-        Read in inital data in order to make everything.
-
-        the angular range of the interpolation is determined by the data itself
-          I try to go as wide as possible If you want to limit the angles, you can trim
-          them later.
-
-        Parameters
-        ----------
-        filename : a string representing a filename, or a list of XRayDataPoints
-        interp_stepsize: a float giving the stepsize I want in the inerpolation
-
-        Returns
-        -------
-        None.
-
-        """
-        super().__init__(diffpat, filename, meta)
-        self.diffpat = InterpolatedDiffractionPattern.spline(interp_stepsize, self)
-
-    @staticmethod
-    def spline(step_spline, dp: DiffractionPattern) -> List[DiffractionDataPoint]:
-        # print(f"Now splining {dp.filename} in steps of {step_spline}")
-        IDP = InterpolatedDiffractionPattern
-        # these will hold the full splined data once I've finished
-        x_spline = []
-        y_spline = []
-        e_spline = []
-
-        # These are the original data that I am going to spline
-        xs = dp.xs
-        ys = dp.ys
-        es = dp.es
-
-        # arbitrary choice of cut-off size -  If i encounter a stepsize
-        # greater then 5*the average, then I'll assume that is the next module
-        step_threshold = 5 * dp.ave_step_size
-        DROP_POINTS = 5
-
-        # Now I start the spline process
-        start_index = 0
-        for stop_index, i in enumerate(range(1, len(xs)), start=1):
-            step = xs[i] - xs[i - 1]
-            if step >= step_threshold or i == len(xs) - 1:
-                # this is the range of data I want to interpolate
-                #  I want to trim off a few datapoints either side of the module edge
-                #  so I don't have to deal with their noisy edges.
-                x_list = xs[start_index + DROP_POINTS:stop_index - DROP_POINTS]
-                y_list = ys[start_index + DROP_POINTS:stop_index - DROP_POINTS]
-                e_list = es[start_index + DROP_POINTS:stop_index - DROP_POINTS]
-
-                # this is the interpolated data
-                x_interp = IDP.generateInterpList(x_list[0], x_list[-1], step_spline)
-                y_interp = IDP.cubic_interp1d(x_interp, x_list, y_list)
-                e_interp = IDP.cubic_interp1d(x_interp, x_list, e_list)
-
-                # put the just-interpolated-data into the whole list of data to be used to make the new DP
-                x_spline += x_interp
-                y_spline += y_interp
-                e_spline += e_interp
-                start_index = stop_index
-
-        return [DiffractionDataPoint(x_spl, y_spl, e_spl) for x_spl, y_spl, e_spl in zip(x_spline, y_spline, e_spline)]
-
-    @staticmethod
-    def generateInterpList(min_start: float, max_stop: float, step: float) -> List[float]:
-        """
-        Generate a list to use as the interpolation array.
-
-        The steps are generated from 0, with m
-
-        Step size is always positive
-        min_start < max_stop
-
-        Parameters
-        ----------
-        min_start : float
-            The minimum value the start angle could take on
-        step : float, positive
-            the step size between angles.
-        max_stop : float > min_start
-            The maximum value the stop angle could take on
-
-        Returns
-        -------
-        A list of floats from ~min_start to ~max_stop in steps of step.
-        The actual start and stop angles will always be in the range
-        [min_start, max_stop]
-
-        Raises
-        ------
-
-        ValueError if max_stop < min_start
-
-        """
-        if max_stop <= min_start:
-            raise ValueError(f"{max_stop} is less than {min_start}. This list must be strictly increasing.")
-
-        angle = 0.0
-        i = 0
-        # find the starting angle
-        if min_start >= 0:
-            while angle < min_start:
-                angle = i * step
-                i += 1
-            if max_stop < min_start:
-                angle -= step
-        else:
-            while angle > min_start:
-                angle = -i * step
-                i += 1
-            if max_stop > min_start:
-                angle += step
-
-        # build the list to return
-        lst = []
-        if max_stop > min_start:
-            while angle < max_stop:
-                lst.append(angle)
-                angle = i * step
-                i += 1
-            angle -= step
-        else:
-            while angle > max_stop:
-                lst.append(angle)
-                angle = -i * step
-                i += 1
-        return lst
-
-    @staticmethod
-    def cubic_interp1d(x0: Union[float, List[float]], x: List[float], y: List[float], do_checks: bool = True) -> float | List[float]:
-        """
-        Interpolate a 1-D function using cubic splines.
-          x0 : a float or 1d-list of floats to interpolate at
-          x  : a 1-D list of floats sorted in increasing order
-          y  : a 1-D list of floats. The length of y must be equal to the length of x.
-
-        Implement a trick to generate at first step the cholesky matrice L of
-        the tridiagonal matrice A (thus L is a bidiagonal matrice that
-        can be solved in two distinct loops).
-
-        additional ref: www.math.uh.edu/~jingqiu/math4364/spline.pdf
-        # original function code at: https://stackoverflow.com/a/48085583/36061
-
-        This function is licenced under: Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0)
-        https://creativecommons.org/licenses/by-sa/3.0/
-        Original Author raphael valentin
-        Date 3 Jan 2018
-
-        Modifications made to remove numpy dependencies; all sub-functions by MR
-
-        This function, and all sub-functions, are licenced under: Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0)
-
-        Mod author: Matthew Rowles
-        Date 3 May 2021
-        """
-        if do_checks:
-            if len(x) != len(y):
-                raise ValueError(f"Length of x ({len(x)}) != length of y ({len(y)}).")
-
-            for i in range(1, len(x)):
-                if x[i - 1] >= x[i]:
-                    raise ValueError("x is not in strictly increasing order.")
-
-        def diff(lst: List[float]) -> List[float]:
-            """
-            numpy.diff with default settings
-            """
-            length = len(lst) - 1
-            r = [0.0] * length
-            for k in range(length):
-                r[k] = lst[k + 1] - lst[k]
-            return r
-
-        def list_searchsorted(list_to_insert: List[float], insert_into: List[float]) -> List[int]:
-            """
-            numpy.searchsorted with default settings
-            """
-
-            def float_searchsorted(float_to_insert: float, insert_into: List[float]) -> int:
-                """
-                Helper function
-                """
-                for i in range(len(insert_into)):
-                    if float_to_insert <= insert_into[i]:
-                        return i
-                return len(insert_into)
-
-            return [float_searchsorted(item, insert_into) for item in list_to_insert]
-
-        def clip(lst: List[float], min_val: float, max_val: float, in_place: bool = False) -> List[float]:
-            """
-            numpy.clip
-            """
-            if not in_place:
-                lst = lst[:]
-            for k in range(len(lst)):
-                if lst[k] < min_val:
-                    lst[k] = min_val
-                elif lst[k] > max_val:
-                    lst[k] = max_val
-            return lst
-
-        def subtract(a: float, b: float) -> float:
-            """
-            returns a - b
-            """
-            return a - b
-
-        if type(x0) is float:
-            x0 = [x0]
-
-        dim = len(x)
-
-        xdiff = diff(x)
-        ydiff = diff(y)
-
-        # allocate buffer matrices
-        Li: list = [0] * dim
-        Li_1: list = [0] * (dim - 1)
-        z: List[float] = [0] * dim
-
-        # fill diagonals Li and Li-1 and solve [L][y] = [B]
-        Li[0] = sqrt(2 * xdiff[0])
-        Li_1[0] = 0.0
-        B0 = 0.0  # natural boundary
-        z[0] = B0 / Li[0]
-
-        for i in range(1, dim - 1, 1):
-            Li_1[i] = xdiff[i - 1] / Li[i - 1]
-            Li[i] = sqrt(2 * (xdiff[i - 1] + xdiff[i]) - Li_1[i - 1] * Li_1[i - 1])
-            Bi = 6 * (ydiff[i] / xdiff[i] - ydiff[i - 1] / xdiff[i - 1])
-            z[i] = (Bi - Li_1[i - 1] * z[i - 1]) / Li[i]
-
-        i = dim - 1
-        Li_1[i - 1] = xdiff[-1] / Li[i - 1]
-        Li[i] = sqrt(2 * xdiff[-1] - Li_1[i - 1] * Li_1[i - 1])
-        Bi = 0.0  # natural boundary
-        z[i] = (Bi - Li_1[i - 1] * z[i - 1]) / Li[i]
-
-        # solve [L.T][x] = [y]
-        i = dim - 1
-        z[i] = z[i] / Li[i]
-        for i in range(dim - 2, -1, -1):
-            z[i] = (z[i] - Li_1[i - 1] * z[i + 1]) / Li[i]
-
-        # find index
-        index = list_searchsorted(x0, x)
-        index = clip(index, 1, dim - 1)
-
-        xi1 = [x[num] for num in index]
-        xi0 = [x[num - 1] for num in index]
-        yi1 = [y[num] for num in index]
-        yi0 = [y[num - 1] for num in index]
-        zi1 = [z[num] for num in index]
-        zi0 = [z[num - 1] for num in index]
-        hi1 = list(map(subtract, xi1, xi0))
-
-        # calculate cubic - all element-wise multiplication
-        f0 = [0] * len(hi1)
-        for j in range(len(f0)):
-            f0[j] = zi0[j] / (6 * hi1[j]) * (xi1[j] - x0[j]) ** 3 + \
-                    zi1[j] / (6 * hi1[j]) * (x0[j] - xi0[j]) ** 3 + \
-                    (yi1[j] / hi1[j] - zi1[j] * hi1[j] / 6) * (x0[j] - xi0[j]) + \
-                    (yi0[j] / hi1[j] - zi0[j] * hi1[j] / 6) * (xi1[j] - x0[j])
-
-        # let's me return a float if a float was put in as x0
-        if len(f0) == 1:
-            f0 = f0[0]
-        return f0
-
-
-# --------------------------------------------------------------------------------------------------
-# --------------------------------------------------------------------------------------------------
-# --------------------------------------------------------------------------------------------------
-
 class DiffractionExperiment:
     """
     This is a Diffraction Experiment.
@@ -1448,7 +1393,7 @@ class DiffractionExperiment:
             return DiffractionExperiment(diffpats=dps)
 
     def interpolate(self, step: float, in_place: bool = True) -> None | DiffractionExperiment:
-        idps = [InterpolatedDiffractionPattern(step, dp.diffpat) for dp in self.diffpats]
+        idps = [dp.interpolate(step, in_place=False) for dp in self.diffpats]
         if in_place:
             self.diffpats = idps
         else:
@@ -1728,39 +1673,18 @@ class Write:
 
 
 def main():
-    diffpat1 = [DiffractionDataPoint(5.00, 2.1),
-                DiffractionDataPoint(5.01, 4.1),
-                DiffractionDataPoint(5.02, 4.1),
-                DiffractionDataPoint(5.03, 3.1),
-                DiffractionDataPoint(5.04, 6.1)]
-    dp1 = DiffractionPattern(diffpat=diffpat1)
-    diffpat2 = [DiffractionDataPoint(5.00, 4.2),
-                DiffractionDataPoint(5.01, 2.2),
-                DiffractionDataPoint(5.02, 4.2),
-                DiffractionDataPoint(5.03, 3.2),
-                DiffractionDataPoint(5.04, 5.2)]
-    dp2 = DiffractionPattern(diffpat=diffpat2)
-    de1 = DiffractionExperiment(diffpats=[dp1, dp2])
-    de1.zero_offset(0.1)
 
-    diffpat3 = [DiffractionDataPoint(5.10, 2.1),
-                DiffractionDataPoint(5.11, 4.1),
-                DiffractionDataPoint(5.12, 4.1),
-                DiffractionDataPoint(5.13, 3.1),
-                DiffractionDataPoint(5.14, 6.1)]
-    dp3 = DiffractionPattern(diffpat=diffpat3)
+    min_start = 12.3456
+    max_stop = 12.4456
+    step = 0.01
+    # angles = DiffractionPattern._generateInterpList(12.3456, 12.4456, 0.01)
+    # [12.35, 12.36, 12.370000000000001, 12.38, 12.39, 12.4, 12.41, 12.42, 12.43, 12.44]
+    angles = DiffractionPattern._generateInterpList(min_start, max_stop, step)
 
-    diffpat4 = [DiffractionDataPoint(5.10, 4.2),
-                DiffractionDataPoint(5.11, 2.2),
-                DiffractionDataPoint(5.12, 4.2),
-                DiffractionDataPoint(5.13, 3.2),
-                DiffractionDataPoint(5.14, 5.2)]
-    dp4 = DiffractionPattern(diffpat=diffpat4)
-    de2 = DiffractionExperiment(diffpats=[dp3, dp4])
+    print(f"{angles=}")
 
-
-    print(f"{de1=}")
-    print(f"{de2=}")
+    print(f"{max_stop // step=}")
+    print(f"{step * int(max_stop // step)=}")
 
 
 if __name__ == "__main__":
