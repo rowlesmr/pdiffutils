@@ -588,6 +588,8 @@ class DiffractionPattern:
             do_neg = True
         elif min_ > 0 and max_ > 0:
             do_pos = True
+        else:
+            raise ValueError("Your data isn't monotonically increasing")
 
         if do_pos:
             pos = copy.deepcopy(self)
@@ -637,20 +639,22 @@ class DiffractionPattern:
         e_spline = []
 
         # arbitrary choice of cut-off size -  If i encounter a stepsize
-        # greater then 5*the average, then I'll assume that is the next module
+        # greater then 5*the average, then I'll assume that is the next Mythen module
         step_threshold = 5 * self.ave_step_size
 
         # Now I start the spline process
         start_index = 0
-        for stop_index, i in enumerate(range(1, len(self.xs)), start=1):
+        for i in range(1, len(self.xs)):
             step = self.xs[i] - self.xs[i - 1]
-            if step >= step_threshold or i == len(self.xs) - 1:
+            if step >= step_threshold or i == len(self.xs) - 1:  # triggered the threshold, or reached the last x value
                 # this is the range of data I want to interpolate
                 #  I want to trim off a few datapoints either side of the module edge
                 #  so I don't have to deal with their noisy edges.
-                x_list = self.xs[start_index + DP.DROP_POINTS_IN_SPLINE:stop_index - DP.DROP_POINTS_IN_SPLINE]
-                y_list = self.ys[start_index + DP.DROP_POINTS_IN_SPLINE:stop_index - DP.DROP_POINTS_IN_SPLINE]
-                e_list = self.es[start_index + DP.DROP_POINTS_IN_SPLINE:stop_index - DP.DROP_POINTS_IN_SPLINE]
+                stop_index = i
+                drop_points = max(min((stop_index - start_index) // 2 - 2, DP.DROP_POINTS_IN_SPLINE), 0)
+                x_list = self.xs[start_index + drop_points:stop_index - drop_points]
+                y_list = self.ys[start_index + drop_points:stop_index - drop_points]
+                e_list = self.es[start_index + drop_points:stop_index - drop_points]
 
                 # this is the interpolated data
                 x_interp = DP._generateInterpList(x_list[0], x_list[-1], step_size)
@@ -708,11 +712,11 @@ class DiffractionPattern:
 
         min_angle = step_size * int(min_start // step_size + 1)
         max_angle = step_size * int(max_stop // step_size)
-        steps = int(round((max_angle - min_angle) / step_size + 1, 0))
-        return [min_angle + i*step_size for i in range(steps)]
+        steps = int(round(((max_angle - min_angle) / step_size) + 1, 0))
+        return [min_angle + i * step_size for i in range(steps)]
 
     @staticmethod
-    def _cubic_interp1d(x0: Union[float, List[float]], x: List[float], y: List[float], do_checks: bool = True) -> float | List[float]:
+    def _cubic_interp1d(x0: float | List[float], x: List[float], y: List[float], do_checks: bool = False) -> float | List[float]:
         """
         Interpolate a 1-D function using cubic splines.
           x0 : a float or 1d-list of floats to interpolate at
@@ -756,21 +760,20 @@ class DiffractionPattern:
                 r[k] = lst[k + 1] - lst[k]
             return r
 
-        def list_searchsorted(list_to_insert: List[float], insert_into: List[float]) -> List[int]:
+        def searchsorted(sorted_list: List[float], val_to_insert: List[float]) -> List[int]:
             """
             numpy.searchsorted with default settings
+            Returns the indicies that the val_to_insert must be inserted at
+            in order to maintain the sorted_list in sorted order
             """
 
             def float_searchsorted(float_to_insert: float, insert_into: List[float]) -> int:
-                """
-                Helper function
-                """
-                for i in range(len(insert_into)):
-                    if float_to_insert <= insert_into[i]:
-                        return i
+                for ii, val in enumerate(insert_into):
+                    if float_to_insert <= val:
+                        return ii
                 return len(insert_into)
 
-            return [float_searchsorted(item, insert_into) for item in list_to_insert]
+            return [float_searchsorted(item, val_to_insert) for item in sorted_list]
 
         def clip(lst: List[float], min_val: float, max_val: float, in_place: bool = False) -> List[float]:
             """
@@ -792,7 +795,7 @@ class DiffractionPattern:
             return a - b
 
         if type(x0) is float:
-            x0 = [x0]
+            x0: list = [x0]
 
         dim = len(x)
 
@@ -829,7 +832,7 @@ class DiffractionPattern:
             z[i] = (z[i] - Li_1[i - 1] * z[i + 1]) / Li[i]
 
         # find index
-        index = list_searchsorted(x0, x)
+        index = searchsorted(x0, x)
         index = clip(index, 1, dim - 1)
 
         xi1 = [x[num] for num in index]
@@ -1333,13 +1336,13 @@ class DiffractionExperiment:
         """
         dps = []
         if isinstance(min_angle, float) and isinstance(max_angle, float):
-            dps = [dp.trim(min_angle, max_angle, in_place=True) for dp in self.diffpats]
+            dps = [dp.trim(min_angle, max_angle, in_place=False) for dp in self.diffpats]
         elif isinstance(min_angle, float) and isinstance(max_angle, list):
-            dps = [dp.trim(min_angle, max_x, in_place=True) for dp, max_x in zip(self.diffpats, max_angle)]
+            dps = [dp.trim(min_angle, max_x, in_place=False) for dp, max_x in zip(self.diffpats, max_angle)]
         elif isinstance(min_angle, list) and isinstance(max_angle, float):
-            dps = [dp.trim(min_x, max_angle, in_place=True) for dp, min_x in zip(self.diffpats, min_angle)]
+            dps = [dp.trim(min_x, max_angle, in_place=False) for dp, min_x in zip(self.diffpats, min_angle)]
         elif isinstance(min_angle, list) and isinstance(max_angle, list):
-            dps = [dp.trim(min_x, max_x, in_place=True) for dp, min_x, max_x in zip(self.diffpats, min_angle, max_angle)]
+            dps = [dp.trim(min_x, max_x, in_place=False) for dp, min_x, max_x in zip(self.diffpats, min_angle, max_angle)]
 
         if in_place:
             self.diffpats = dps
@@ -1379,13 +1382,15 @@ class DiffractionExperiment:
         :param is_rolling: do a rolling average?
         :return:
         """
+        if num <= 1:
+            raise ValueError("You need to average more than 1 dataset together.")
+
         range_step = 1 if is_rolling else num
         dps = []
-
-        for i in range(0, len(self.diffpats) - num, range_step):
+        for i in range(0, len(self.diffpats) - num + 1, range_step):
             dp = copy.deepcopy(self.diffpats[i])
             tmp = [self.diffpats[i + j] for j in range(1, num)]
-            dps.append(dp.average_with(tmp))
+            dps.append(dp.average_with(tmp, in_place=False))
 
         if in_place:
             self.diffpats = dps
@@ -1393,10 +1398,11 @@ class DiffractionExperiment:
             return DiffractionExperiment(diffpats=dps)
 
     def interpolate(self, step: float, in_place: bool = True) -> None | DiffractionExperiment:
-        idps = [dp.interpolate(step, in_place=False) for dp in self.diffpats]
         if in_place:
-            self.diffpats = idps
+            for dp in self.diffpats:
+                dp.interpolate(step, in_place=True)
         else:
+            idps = [dp.interpolate(step, in_place=False) for dp in self.diffpats]
             return DiffractionExperiment(diffpats=idps)
 
     def split_on_zero(self):
@@ -1673,19 +1679,30 @@ class Write:
 
 
 def main():
+    def is_all_equal(d1: DiffractionPattern, d2: DiffractionPattern):
+        for ddp1, ddp2 in zip(d1.diffpat, d2.diffpat):
+            if not math.isclose(ddp1.x, ddp2.x):
+                return False
+            if not math.isclose(ddp1.y, ddp2.y):
+                return False
+            if not math.isclose(ddp1.e, ddp2.e):
+                return False
+        return True
 
-    min_start = 12.3456
-    max_stop = 12.4456
-    step = 0.01
-    # angles = DiffractionPattern._generateInterpList(12.3456, 12.4456, 0.01)
-    # [12.35, 12.36, 12.370000000000001, 12.38, 12.39, 12.4, 12.41, 12.42, 12.43, 12.44]
-    angles = DiffractionPattern._generateInterpList(min_start, max_stop, step)
+    diffpat1 = [DiffractionDataPoint(5.00, 2.1),
+                DiffractionDataPoint(5.01, 4.1),
+                DiffractionDataPoint(5.02, 4.1),
+                DiffractionDataPoint(5.03, 3.1),
+                DiffractionDataPoint(5.04, 6.1)]
+    dp1 = DiffractionPattern(diffpat=diffpat1)
+    diffpat2 = [DiffractionDataPoint(5.01, 4.1),
+                DiffractionDataPoint(5.02, 4.1),
+                DiffractionDataPoint(5.03, 3.1)]
+    dp2 = DiffractionPattern(diffpat=diffpat2)
 
-    print(f"{angles=}")
-
-    print(f"{max_stop // step=}")
-    print(f"{step * int(max_stop // step)=}")
-
+    print(f"{dp1=}")
+    dp1.trim(5.01, 5.03, in_place=False)
+    print(f"{dp1=}")
 
 if __name__ == "__main__":
     main()

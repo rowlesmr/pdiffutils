@@ -11,10 +11,13 @@ import operator
 def is_all_equal(d1: DiffractionExperiment, d2: DiffractionExperiment):
     for dp1, dp2 in zip(d1.diffpats, d2.diffpats):
         for ddp1, ddp2 in zip(dp1.diffpat, dp2.diffpat):
-            if not (math.isclose(ddp1.x, ddp2.x) or math.isclose(ddp1.y, ddp2.y) or math.isclose(ddp1.e, ddp2.e)):
+            if not math.isclose(ddp1.x, ddp2.x):
+                return False
+            if not math.isclose(ddp1.y, ddp2.y):
+                return False
+            if not math.isclose(ddp1.e, ddp2.e):
                 return False
     return True
-
 
 def test_construction():
     diffpat1 = [DiffractionDataPoint(5.00, 2.1),
@@ -154,9 +157,91 @@ def test_len():
     assert len(de1) == 2
 
 
-@pytest.mark.xfail
 def test_trim():
-    assert 1 / 0 == 1
+    def make_de():
+        diffpat1 = [DiffractionDataPoint(5.00, 2.1),
+                    DiffractionDataPoint(5.01, 4.1),
+                    DiffractionDataPoint(5.02, 4.1),
+                    DiffractionDataPoint(5.03, 3.1),
+                    DiffractionDataPoint(5.04, 6.1),
+                    DiffractionDataPoint(5.05, 7.1)]
+        dp1 = DiffractionPattern(diffpat=diffpat1)
+        diffpat2 = [DiffractionDataPoint(5.00, 4.2),
+                    DiffractionDataPoint(5.01, 2.2),
+                    DiffractionDataPoint(5.02, 4.2),
+                    DiffractionDataPoint(5.03, 3.2),
+                    DiffractionDataPoint(5.04, 5.2),
+                    DiffractionDataPoint(5.05, 6.2)]
+        dp2 = DiffractionPattern(diffpat=diffpat2)
+        return DiffractionExperiment(diffpats=[dp1, dp2])
+
+    diffpat1 = [DiffractionDataPoint(5.01, 4.1),
+                DiffractionDataPoint(5.02, 4.1),
+                DiffractionDataPoint(5.03, 3.1),
+                DiffractionDataPoint(5.04, 6.1)]
+    dp1 = DiffractionPattern(diffpat=diffpat1)
+    diffpat2 = [DiffractionDataPoint(5.01, 2.2),
+                DiffractionDataPoint(5.02, 4.2),
+                DiffractionDataPoint(5.03, 3.2),
+                DiffractionDataPoint(5.04, 5.2)]
+    dp2 = DiffractionPattern(diffpat=diffpat2)
+    de2 = DiffractionExperiment(diffpats=[dp1,dp2])
+
+    de1 = make_de()
+    de = de1.trim(5.005, 5.045, in_place= False)
+    assert is_all_equal(de, de2)
+    de1.trim(5.005, 5.045, in_place=True)
+    assert is_all_equal(de1, de2)
+
+    diffpat1 = [DiffractionDataPoint(5.02, 4.1),
+                DiffractionDataPoint(5.03, 3.1),
+                DiffractionDataPoint(5.04, 6.1)]
+    dp1 = DiffractionPattern(diffpat=diffpat1)
+    diffpat2 = [DiffractionDataPoint(5.01, 2.2),
+                DiffractionDataPoint(5.02, 4.2),
+                DiffractionDataPoint(5.03, 3.2),
+                DiffractionDataPoint(5.04, 5.2)]
+    dp2 = DiffractionPattern(diffpat=diffpat2)
+    de2 = DiffractionExperiment(diffpats=[dp1,dp2])
+
+    de1 = make_de()
+    de = de1.trim([5.015, 5.005], 5.045, in_place= False)
+    assert is_all_equal(de, de2)
+    de1.trim([5.015, 5.005], 5.045, in_place=True)
+    assert is_all_equal(de1, de2)
+
+    diffpat1 = [DiffractionDataPoint(5.01, 4.1),
+                DiffractionDataPoint(5.02, 4.1),
+                DiffractionDataPoint(5.03, 3.1)]
+    dp1 = DiffractionPattern(diffpat=diffpat1)
+    diffpat2 = [DiffractionDataPoint(5.01, 2.2),
+                DiffractionDataPoint(5.02, 4.2),
+                DiffractionDataPoint(5.03, 3.2),
+                DiffractionDataPoint(5.04, 5.2)]
+    dp2 = DiffractionPattern(diffpat=diffpat2)
+    de2 = DiffractionExperiment(diffpats=[dp1, dp2])
+
+    de1 = make_de()
+    de = de1.trim(5.005, [5.035, 5.045], in_place=False)
+    assert is_all_equal(de, de2)
+    de1.trim(5.005, [5.035, 5.045], in_place=True)
+    assert is_all_equal(de1, de2)
+
+    diffpat1 = [DiffractionDataPoint(5.01, 4.1),
+                DiffractionDataPoint(5.02, 4.1),
+                DiffractionDataPoint(5.03, 3.1)]
+    dp1 = DiffractionPattern(diffpat=diffpat1)
+    diffpat2 = [DiffractionDataPoint(5.02, 4.2),
+                DiffractionDataPoint(5.03, 3.2),
+                DiffractionDataPoint(5.04, 5.2)]
+    dp2 = DiffractionPattern(diffpat=diffpat2)
+    de2 = DiffractionExperiment(diffpats=[dp1, dp2])
+
+    de1 = make_de()
+    de = de1.trim([5.005, 5.015], [5.035, 5.045], in_place=False)
+    assert is_all_equal(de, de2)
+    de1.trim([5.005, 5.015], [5.035, 5.045], in_place=True)
+    assert is_all_equal(de1, de2)
 
 
 def test_sort():
@@ -227,10 +312,90 @@ def test_downsample():
     assert is_all_equal(de1, de2)
 
 
-@pytest.mark.xfail
 def test_average_patterns():
-    assert False
+    def make_de():
+        diffpat1 = [DiffractionDataPoint(5.00, 2.1),
+                    DiffractionDataPoint(5.01, 4.1),
+                    DiffractionDataPoint(5.02, 4.1),
+                    DiffractionDataPoint(5.03, 3.1),
+                    DiffractionDataPoint(5.04, 6.1),
+                    DiffractionDataPoint(5.05, 7.1)]
+        dp1 = DiffractionPattern(diffpat=diffpat1)
+        diffpat2 = [DiffractionDataPoint(5.00, 4.2),
+                    DiffractionDataPoint(5.01, 2.2),
+                    DiffractionDataPoint(5.02, 4.2),
+                    DiffractionDataPoint(5.03, 3.2),
+                    DiffractionDataPoint(5.04, 5.2),
+                    DiffractionDataPoint(5.05, 6.2)]
+        dp2 = DiffractionPattern(diffpat=diffpat2)
+        diffpat3 = [DiffractionDataPoint(5.00, 5.3),
+                    DiffractionDataPoint(5.01, 3.3),
+                    DiffractionDataPoint(5.02, 7.3),
+                    DiffractionDataPoint(5.03, 3.3),
+                    DiffractionDataPoint(5.04, 4.3),
+                    DiffractionDataPoint(5.05, 2.3)]
+        dp3 = DiffractionPattern(diffpat=diffpat3)
+        diffpat4 = [DiffractionDataPoint(5.00, 3.4),
+                    DiffractionDataPoint(5.01, 7.4),
+                    DiffractionDataPoint(5.02, 8.4),
+                    DiffractionDataPoint(5.03, 4.4),
+                    DiffractionDataPoint(5.04, 6.4),
+                    DiffractionDataPoint(5.05, 3.4)]
+        dp4 = DiffractionPattern(diffpat=diffpat4)
+        return DiffractionExperiment(diffpats=[dp1, dp2, dp3, dp4])
 
+    #test rolling
+    diffpat1 = [DiffractionDataPoint(5.00, (2.1+4.2)/2, math.sqrt(2.1+4.2)/2),
+                DiffractionDataPoint(5.01, (4.1+2.2)/2, math.sqrt(4.1+2.2)/2),
+                DiffractionDataPoint(5.02, (4.1+4.2)/2, math.sqrt(4.1+4.2)/2),
+                DiffractionDataPoint(5.03, (3.1+3.2)/2, math.sqrt(3.1+3.2)/2),
+                DiffractionDataPoint(5.04, (6.1+5.2)/2, math.sqrt(6.1+5.2)/2),
+                DiffractionDataPoint(5.05, (7.1+6.2)/2, math.sqrt(7.1+6.2)/2)]
+    dp1 = DiffractionPattern(diffpat=diffpat1)
+    diffpat2 = [DiffractionDataPoint(5.00, (4.2+5.3)/2, math.sqrt(4.2+5.3)/2),
+                DiffractionDataPoint(5.01, (2.2+3.3)/2, math.sqrt(2.2+3.3)/2),
+                DiffractionDataPoint(5.02, (4.2+7.3)/2, math.sqrt(4.2+7.3)/2),
+                DiffractionDataPoint(5.03, (3.2+3.3)/2, math.sqrt(3.2+3.3)/2),
+                DiffractionDataPoint(5.04, (5.2+4.3)/2, math.sqrt(5.2+4.3)/2),
+                DiffractionDataPoint(5.05, (6.2+2.3)/2, math.sqrt(6.2+2.3)/2)]
+    dp2 = DiffractionPattern(diffpat=diffpat2)
+    diffpat3 = [DiffractionDataPoint(5.00, (5.3+3.4)/2, math.sqrt(5.3+3.4)/2),
+                DiffractionDataPoint(5.01, (3.3+7.4)/2, math.sqrt(3.3+7.4)/2),
+                DiffractionDataPoint(5.02, (7.3+8.4)/2, math.sqrt(7.3+8.4)/2),
+                DiffractionDataPoint(5.03, (3.3+4.4)/2, math.sqrt(3.3+4.4)/2),
+                DiffractionDataPoint(5.04, (4.3+6.4)/2, math.sqrt(4.3+6.4)/2),
+                DiffractionDataPoint(5.05, (2.3+3.4)/2, math.sqrt(2.3+3.4)/2)]
+    dp3 = DiffractionPattern(diffpat=diffpat3)
+    de2 = DiffractionExperiment(diffpats=[dp1, dp2, dp3])
+
+    de1 = make_de()
+    de = de1.average_patterns(2, is_rolling=True, in_place=False)
+    assert is_all_equal(de, de2)
+    de1.average_patterns(2, is_rolling=True, in_place=True)
+    assert is_all_equal(de1, de2)
+
+    #test not rolling
+    diffpat1 = [DiffractionDataPoint(5.00, (2.1+4.2)/2, math.sqrt(2.1+4.2)/2),
+                DiffractionDataPoint(5.01, (4.1+2.2)/2, math.sqrt(4.1+2.2)/2),
+                DiffractionDataPoint(5.02, (4.1+4.2)/2, math.sqrt(4.1+4.2)/2),
+                DiffractionDataPoint(5.03, (3.1+3.2)/2, math.sqrt(3.1+3.2)/2),
+                DiffractionDataPoint(5.04, (6.1+5.2)/2, math.sqrt(6.1+5.2)/2),
+                DiffractionDataPoint(5.05, (7.1+6.2)/2, math.sqrt(7.1+6.2)/2)]
+    dp1 = DiffractionPattern(diffpat=diffpat1)
+    diffpat2 = [DiffractionDataPoint(5.00, (5.3+3.4)/2, math.sqrt(5.3+3.4)/2),
+                DiffractionDataPoint(5.01, (3.3+7.4)/2, math.sqrt(3.3+7.4)/2),
+                DiffractionDataPoint(5.02, (7.3+8.4)/2, math.sqrt(7.3+8.4)/2),
+                DiffractionDataPoint(5.03, (3.3+4.4)/2, math.sqrt(3.3+4.4)/2),
+                DiffractionDataPoint(5.04, (4.3+6.4)/2, math.sqrt(4.3+6.4)/2),
+                DiffractionDataPoint(5.05, (2.3+3.4)/2, math.sqrt(2.3+3.4)/2)]
+    dp2 = DiffractionPattern(diffpat=diffpat2)
+    de2 = DiffractionExperiment(diffpats=[dp1, dp2])
+
+    de1 = make_de()
+    de = de1.average_patterns(2, is_rolling=False, in_place=False)
+    assert is_all_equal(de, de2)
+    de1.average_patterns(2, is_rolling=False, in_place=True)
+    assert is_all_equal(de1, de2)
 
 @pytest.mark.xfail
 def test_interpolate():
