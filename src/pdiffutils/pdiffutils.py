@@ -1416,41 +1416,31 @@ class DiffractionExperiment:
             idps = [dp.interpolate(step, in_place=False) for dp in self.diffpats]
             return DiffractionExperiment(diffpats=idps)
 
-    def split_on_zero(self) -> tuple[DiffractionExperiment | None, DiffractionExperiment | None]:
+    def split_on_zero(self, remove_none_dps=False) -> tuple[DiffractionExperiment | None, DiffractionExperiment | None]:
         """
         Gets a diffraction experiment that contains -ve and +ve angles, and returns two diffraction experiments:
         one from the +ve bit, and a negated version from the -ve side
-        Returns
-        -------
-        A tuple containing two diffraction experiments. The first is from the +ve side, the second from the -ve side
+
+        :param remove_none_dps: if any of the returned DiffractionPatterns are none, then they are removed if remove_none_dps == True
+        :return: A tuple containing two diffraction experiments. The first is from the +ve side, the second from the -ve side
         """
         diffpats_p = []
         diffpats_n = []
-        all_none_p = True
-        all_none_n = True
+
         for dp in self.diffpats:
             dpp, dpn = dp.split_on_zero()
-            if dpp is not None:
-                all_none_p = False
-            if dpn is not None:
-                all_none_n = False
-            diffpats_p.append(dpp)
-            diffpats_n.append(dpn)
+            if remove_none_dps:
+                if dpp is not None:
+                    diffpats_p.append(dpp)
+                if dpn is not None:
+                    diffpats_n.append(dpn)
+            else:
+                diffpats_p.append(dpp)
+                diffpats_n.append(dpn)
 
-        dep = DiffractionExperiment(diffpats=diffpats_p) if not all_none_p else None
-        den = DiffractionExperiment(diffpats=diffpats_n) if not all_none_n else None
+        dep = DiffractionExperiment(diffpats=diffpats_p) if diffpats_p else None
+        den = DiffractionExperiment(diffpats=diffpats_n) if diffpats_n else None
         return dep, den
-
-    def remove_nones(self, in_place: bool = True) -> None | DiffractionExperiment:
-        """
-        Looks at all the DiffractionPatterns, and if any are None, then it removes them
-        :return: None or DiffractionExperiment
-        """
-        if in_place:
-            self.diffpats[:] = [dp for dp in self.diffpats if dp is not None]
-        else:
-            dps = [copy.deepcopy(dp) for dp in self.diffpats if dp is not None]
-            return DiffractionExperiment(diffpats=dps)
 
 
 # --------------------------------------------------------------------------------------------------
@@ -1647,7 +1637,7 @@ class Write:
     """
 
     @staticmethod
-    def _get_padding(dp: DiffractionPattern)->tuple(int, int, int):
+    def _get_padding(dp: DiffractionPattern) -> tuple(int, int, int):
         x_pad = int(math.log10(max(dp.xs))) + 2
         y_pad = int(math.log10(max(dp.ys))) + 2
         e_pad = max(int(math.log10(max(dp.es))), 0) + 2
@@ -1663,7 +1653,7 @@ class Write:
 
     @staticmethod
     def xye(dp: DiffractionPattern, filename: str,
-            dp_angle: int = 5, dp_intensity: int = 3, dp_error: int = 3, is_xy: bool = False)->None:
+            dp_angle: int = 5, dp_intensity: int = 3, dp_error: int = 3, is_xy: bool = False) -> None:
         """
         To write a nice XYE file to a file.
 
@@ -1697,13 +1687,13 @@ class Write:
                     f.write(f"{a}{i}{e}\n")
 
     @staticmethod
-    def xy(dp: DiffractionPattern, filename: str, dp_angle: int = 5, dp_intensity: int = 3, dp_error: int = 3)->None:
+    def xy(dp: DiffractionPattern, filename: str, dp_angle: int = 5, dp_intensity: int = 3, dp_error: int = 3) -> None:
         Write.xye(dp, filename, dp_angle, dp_intensity, dp_error, is_xy=True)
 
     @staticmethod
     def cif(dp: DiffractionPattern, filename: str, dp_angle: int = 5,
             data_block: str = "pdiffutils", x_type: str = "_pd_meas_2theta_scan", y_type: str = "_pd_meas_intensity_total",
-            other_dataitems: str = None)->None:
+            other_dataitems: str = None) -> None:
         diffpat = dp.diffpat
         x_pad, _, _ = Write._get_padding(dp)
         ys = [val_err_str(y, e) for y, e in zip(dp.ys, dp.es)]
@@ -1725,26 +1715,35 @@ class Write:
 
 
 def main():
-    file = r"..\..\data\1.xrdml"
-    document = ET.parse(file)
+    diffpat1 = [DiffractionDataPoint(5.00, 4.1),
+                DiffractionDataPoint(5.01, 2.1),
+                DiffractionDataPoint(5.02, 3.1),
+                DiffractionDataPoint(5.03, 4.1),
+                DiffractionDataPoint(5.04, 6.1),
+                DiffractionDataPoint(5.05, 5.1)]
 
-    startAngle  = document.find(".//{*}xrdMeasurement/{*}scan[1]/{*}dataPoints/{*}positions[1]/{*}startPosition")
-    stopAngle   = document.find(".//{*}xrdMeasurement/{*}scan[1]/{*}dataPoints/{*}positions[1]/{*}endPosition")
-    intensities = document.find(".//{*}xrdMeasurement/{*}scan[1]/{*}dataPoints/{*}intensities")
+    diffpat2 = [DiffractionDataPoint(-5.05, 5.1),
+                DiffractionDataPoint(-5.04, 6.1),
+                DiffractionDataPoint(-5.03, 4.1),
+                DiffractionDataPoint(-5.02, 3.1),
+                DiffractionDataPoint(-5.01, 2.1),
+                DiffractionDataPoint(-5.00, 4.1)]
 
-    startAngle = float(startAngle.text)
-    stopAngle = float(stopAngle.text)
-    intensities = [float(val) for val in intensities.text.split(' ')]
-    step_size = (stopAngle - startAngle) / (len(intensities) - 1)
+    diffpat = copy.deepcopy(diffpat2 + diffpat1)
+    dp0a = DiffractionPattern(diffpat=diffpat)
+    dp0b = copy.deepcopy(dp0a)
+    de0 = DiffractionExperiment(diffpats=[dp0a,dp0b])
 
-    print(f"{startAngle=}, {stopAngle=}, {step_size=}")
-    print(f"{intensities=}")
-    print(f"{startAngle + (len(intensities) - 1) * step_size}")
+    de1 = DiffractionExperiment(diffpats=[DiffractionPattern(diffpat=copy.deepcopy(diffpat1))])
+    de2 = DiffractionExperiment(diffpats=[DiffractionPattern(diffpat=copy.deepcopy(diffpat2))])
+    de2.negate()
+    de2.reverse()
 
-    dp = DiffractionPattern(diffpat=Read.xrdml(file))
+    de0 = DiffractionExperiment(diffpats=[DiffractionPattern(diffpat=copy.deepcopy(diffpat2))])
+    dep, den = de0.split_on_zero()
 
-    print(dp)
-
+    print(f"{dep=}")
+    print(f"{den=}")
 
 if __name__ == "__main__":
     main()
