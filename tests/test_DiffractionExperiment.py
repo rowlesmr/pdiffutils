@@ -243,6 +243,12 @@ def test_trim():
     de1.trim([5.005, 5.015], [5.035, 5.045], in_place=True)
     assert is_all_equal(de1, de2)
 
+    with pytest.raises(ValueError) as e_info:
+        de1.trim([5.005, 5.015, 5.02], [5.035, 5.045], in_place=True)
+    with pytest.raises(ValueError) as e_info:
+        de1.trim([5.005, 5.015], [5.035, 5.045, 5.04], in_place=True)
+
+
 
 def test_sort():
     diffpat1 = [DiffractionDataPoint(5.00, 2.1),
@@ -397,12 +403,40 @@ def test_average_patterns():
     de1.average_patterns(2, is_rolling=False, in_place=True)
     assert is_all_equal(de1, de2)
 
-@pytest.mark.skip
+    with pytest.raises(ValueError) as e_info:
+        de1.average_patterns(1, is_rolling=False, in_place=True)
+
+    with pytest.raises(ValueError) as e_info:
+        de1.average_patterns(10, is_rolling=False, in_place=True)
+
+
 def test_interpolate():
-    pass
+    diffpat1 = [DiffractionDataPoint(5.002, 4.1),
+                DiffractionDataPoint(5.013, 2.1),
+                DiffractionDataPoint(5.019, 3.1),
+                DiffractionDataPoint(5.032, 4.1),
+                DiffractionDataPoint(5.041, 6.1),
+                DiffractionDataPoint(5.048, 5.1)]
+    dp1a = DiffractionPattern(diffpat=copy.deepcopy(diffpat1))
+    dp1b = copy.deepcopy(dp1a)
+
+    diffpat2 = [DiffractionDataPoint(5.01, 2.312237842, 1.506455839),
+                DiffractionDataPoint(5.02, 3.323940438, 1.829534893),
+                DiffractionDataPoint(5.03, 3.982959585, 2.009241527),
+                DiffractionDataPoint(5.04, 5.872433914, 2.419163642)]
+    dp2a = DiffractionPattern(diffpat=copy.deepcopy(diffpat2))
+    dp2b = copy.deepcopy(dp2a)
+
+    de1 = DiffractionExperiment(diffpats=[dp1a, dp1b])
+    de2 = DiffractionExperiment(diffpats=[dp2a, dp2b])
+
+    de = de1.interpolate(0.01, in_place=False)
+    assert is_all_equal(de, de2)
+    de1.interpolate(0.01)
+    assert is_all_equal(de1, de2)
 
 
-@pytest.mark.skip
+
 def test_split_on_zero():
     diffpat1 = [DiffractionDataPoint(5.00, 4.1),
                 DiffractionDataPoint(5.01, 2.1),
@@ -419,12 +453,38 @@ def test_split_on_zero():
                 DiffractionDataPoint(-5.00, 4.1)]
 
     diffpat = copy.deepcopy(diffpat2 + diffpat1)
-    dp0 = DiffractionPattern(diffpat=diffpat)
-    dp1 = DiffractionPattern(diffpat=diffpat1)
-    dp2 = DiffractionPattern(diffpat=diffpat2)
-    dp2.negate()
-    dp2.reverse()
+    dp0a = DiffractionPattern(diffpat=diffpat)
+    dp0b = copy.deepcopy(dp0a)
+    de0 = DiffractionExperiment(diffpats=[dp0a,dp0b])
 
-    dpp, dpn = dp0.split_on_zero()
-    assert is_all_equal(dpp, dp1)
-    assert is_all_equal(dpn, dp2)  # the negative pattern is returned as the equivalent positive pattern
+    de1 = DiffractionExperiment(diffpats=[DiffractionPattern(diffpat=copy.deepcopy(diffpat1))])
+    de2 = DiffractionExperiment(diffpats=[DiffractionPattern(diffpat=copy.deepcopy(diffpat2))])
+    de2.negate()
+    de2.reverse()
+
+    dep, den = de0.split_on_zero()
+    assert is_all_equal(dep, de1)
+    assert is_all_equal(den, de2)  # the negative pattern is returned as the equivalent positive pattern
+
+    de0 = DiffractionExperiment(diffpats=[DiffractionPattern(diffpat=copy.deepcopy(diffpat1))])
+    dep, den = de0.split_on_zero()
+    assert is_all_equal(dep, de1)
+    assert den.diffpats[0] is None
+
+    de0 = DiffractionExperiment(diffpats=[DiffractionPattern(diffpat=copy.deepcopy(diffpat1))])
+    dep, den = de0.split_on_zero(remove_none_dps=True)
+    assert is_all_equal(dep, de1)
+    assert den is None
+
+    de0 = DiffractionExperiment(diffpats=[DiffractionPattern(diffpat=copy.deepcopy(diffpat2))])
+    dep, den = de0.split_on_zero()
+    assert is_all_equal(den, de2)
+    assert dep.diffpats[0] is None
+
+    de0 = DiffractionExperiment(diffpats=[DiffractionPattern(diffpat=copy.deepcopy(diffpat2))])
+    dep, den = de0.split_on_zero(remove_none_dps=True)
+    assert is_all_equal(den, de2)
+    assert dep is None
+
+
+
