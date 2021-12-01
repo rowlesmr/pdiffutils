@@ -13,7 +13,8 @@ import operator
 # import random
 # from timeit import default_timer as timer  # use as start = timer() ...  end = timer()
 from math import sqrt
-from typing import List, Union
+from typing import List, Optional, Union
+import xml.etree.ElementTree as ET
 
 
 def val_err_str(val: float, err: float) -> str:
@@ -44,12 +45,12 @@ def val_err_str(val: float, err: float) -> str:
 
 class DiffractionDataPoint:
     """
-    This is an X-ray data point.
+    This is a data point in a diffraction patter.
 
     Each entry has a position, intensity and an error associated with the intensity.
 
-    The position variable is named "angle", but this may also be energy (for ED) or time (for TOF).
-    The name is just semantically related for "normal" diffraction
+    The position variable is named "x", can can be angle (eg in 2Th), be energy (for ED) or time (for TOF).
+    The intensity is "y", and the error in the intensity is "e".
     """
 
     def __init__(self, x: float, y: float, error: float = None):
@@ -484,7 +485,7 @@ class DiffractionPattern:
     def reverse(self):
         self.diffpat.reverse()
 
-    def zero_offset(self, offset: Union[float, List[float]]):
+    def zero_offset(self, offset: float | List[float]):
         if isinstance(offset, float):
             for d in self.diffpat:
                 d.zeroOffset(offset)
@@ -507,7 +508,7 @@ class DiffractionPattern:
         s = f"{s[:-2]}\n], {self.filename}, {self.meta})"
         return s
 
-    def trim(self, min_x: float = -180, max_x: float = 180, in_place: bool = True) -> None | DiffractionPattern:
+    def trim(self, min_x: float = -180, max_x: float = 180, in_place: bool = True) -> Optional[DiffractionPattern]:
         """
         Trims a diffraction pattern such that there exist no angles less
         than min_angle, and no angles greater than max_angle.
@@ -523,7 +524,7 @@ class DiffractionPattern:
         dp = [xdp for xdp in self.diffpat if min_x <= xdp.x <= max_x]
 
         if in_place:
-            self.diffpat = dp
+            self.diffpat[:] = dp
         else:
             return DiffractionPattern(diffpat=dp)
 
@@ -538,7 +539,7 @@ class DiffractionPattern:
             dp.sort()
             return DiffractionPattern(diffpat=dp)
 
-    def downsample(self, ds: int, in_place: bool = True) -> None | DiffractionPattern:
+    def downsample(self, ds: int, in_place: bool = True) -> Optional[DiffractionPattern]:
         """
         Downsamples the number of angles by averaging them.
         ds == 2 gives half the number of angles, 3 gives one third, and so on.
@@ -562,7 +563,7 @@ class DiffractionPattern:
             r.append(DiffractionDataPoint(a_new, i_new, e_new))
 
         if in_place:
-            self.diffpat = r
+            self.diffpat[:] = r
         else:
             return DiffractionPattern(r)
 
@@ -602,9 +603,10 @@ class DiffractionPattern:
 
         return pos, neg
 
-    def average_with(self, dps: List[DiffractionPattern], in_place: bool = True) -> None | DiffractionPattern:
+    def average_with(self, dps: List[DiffractionPattern], in_place: bool = True) -> Optional[DiffractionPattern]:
         # get deepcopy of the diffpats so I'm not plagued by pointer errors
-        src = copy.deepcopy(self.diffpat)
+
+        src = self.diffpat if in_place else copy.deepcopy(self.diffpat)
         for dp in dps:
             src += copy.deepcopy(dp.diffpat)
         src.sort()
@@ -627,7 +629,7 @@ class DiffractionPattern:
             i = j
 
         if in_place:
-            self.diffpat = dest
+            self.diffpat[:] = dest
         else:
             return DiffractionPattern(diffpat=dest)
 
@@ -669,7 +671,7 @@ class DiffractionPattern:
         r = [DiffractionDataPoint(x_spl, y_spl, e_spl) for x_spl, y_spl, e_spl in zip(x_spline, y_spline, e_spline)]
 
         if in_place:
-            self.diffpat = r
+            self.diffpat[:] = r
         else:
             return DiffractionPattern(diffpat=r)
 
@@ -1320,8 +1322,8 @@ class DiffractionExperiment:
         s = f"{s[:-2]}\n], {self.filename}, {self.meta})"
         return s
 
-    def trim(self, min_angle: Union[float, List[float]] = -180,
-             max_angle: Union[float, List[float]] = 180,
+    def trim(self, min_x: float | List[float] = -180,
+             max_x: float | List[float] = 180,
              in_place: bool = True) -> None | DiffractionExperiment:
         """
         Trims a diffraction pattern such that there exist no angles less
@@ -1329,34 +1331,39 @@ class DiffractionExperiment:
 
         Parameters
         ----------
-        min_angle : float, optional
+        min_x : float, list(float), optional
             the minimum angle you want to see in your diffraction pattern. The default is -180.
-        max_angle : float, optional
+        max_x : float, list(float), optional
             the maximum angle you want to see in your diffraction pattern. The default is 180.
+        in_place: bool, optional
+            Do you want to trim in-place?. The default is True.
         """
-        dps = []
-        if isinstance(min_angle, float) and isinstance(max_angle, float):
-            dps = [dp.trim(min_angle, max_angle, in_place=False) for dp in self.diffpats]
-        elif isinstance(min_angle, float) and isinstance(max_angle, list):
-            dps = [dp.trim(min_angle, max_x, in_place=False) for dp, max_x in zip(self.diffpats, max_angle)]
-        elif isinstance(min_angle, list) and isinstance(max_angle, float):
-            dps = [dp.trim(min_x, max_angle, in_place=False) for dp, min_x in zip(self.diffpats, min_angle)]
-        elif isinstance(min_angle, list) and isinstance(max_angle, list):
-            dps = [dp.trim(min_x, max_x, in_place=False) for dp, min_x, max_x in zip(self.diffpats, min_angle, max_angle)]
+        if isinstance(min_x, float):
+            min_x = [min_x] * len(self)
+        if isinstance(max_x, float):
+            max_x = [max_x] * len(self)
+
+        if len(min_x) != len(self):
+            raise ValueError(f"You gave {len(min_x)} minimum angles. You need {len(self)}.")
+        if len(max_x) != len(self):
+            raise ValueError(f"You gave {len(max_x)} minimum angles. You need {len(self)}.")
 
         if in_place:
-            self.diffpats = dps
+            for dp, min_val, max_val in zip(self.diffpats, min_x, max_x):
+                dp.trim(min_val, max_val)
         else:
+            dps = [dp.trim(min_x, max_x, in_place=False) for dp, min_x, max_x in zip(self.diffpats, min_x, max_x)]
             return DiffractionExperiment(diffpats=dps)
 
     def sort(self, in_place: bool = True) -> None | DiffractionExperiment:
         """
         In-place sort of the diffraction pattern, based on angles
         """
-        dps = [dp.sort(in_place=False) for dp in self.diffpats]
         if in_place:
-            self.diffpats = dps
+            for dp in self.diffpats:
+                dp.sort()
         else:
+            dps = [dp.sort(in_place=False) for dp in self.diffpats]
             return DiffractionExperiment(diffpats=dps)
 
     def downsample(self, ds: int, in_place: bool = True) -> None | DiffractionExperiment:
@@ -1367,10 +1374,12 @@ class DiffractionExperiment:
         ----------
         ds an integer describing the factor by which to downsample.
         """
-        dps = [dp.downsample(ds, in_place=False) for dp in self.diffpats]
+
         if in_place:
-            self.diffpats = dps
+            for dp in self.diffpats:
+                dp.downsample(ds)
         else:
+            dps = [dp.downsample(ds, in_place=False) for dp in self.diffpats]
             return DiffractionExperiment(diffpats=dps)
 
     def average_patterns(self, num: int, is_rolling: bool = True, in_place: bool = True) -> None | DiffractionExperiment:
@@ -1384,6 +1393,8 @@ class DiffractionExperiment:
         """
         if num <= 1:
             raise ValueError("You need to average more than 1 dataset together.")
+        if num > len(self):
+            raise ValueError(f"You tried to average {num} patterns where there is only {len(self)} to choose from.")
 
         range_step = 1 if is_rolling else num
         dps = []
@@ -1393,7 +1404,7 @@ class DiffractionExperiment:
             dps.append(dp.average_with(tmp, in_place=False))
 
         if in_place:
-            self.diffpats = dps
+            self.diffpats[:] = dps
         else:
             return DiffractionExperiment(diffpats=dps)
 
@@ -1405,20 +1416,47 @@ class DiffractionExperiment:
             idps = [dp.interpolate(step, in_place=False) for dp in self.diffpats]
             return DiffractionExperiment(diffpats=idps)
 
-    def split_on_zero(self):
+    def split_on_zero(self) -> tuple[DiffractionExperiment | None, DiffractionExperiment | None]:
         """
-        Gets a diffraction pattern that contains -ve and +ve angles, and returns two diffraction patterns:
+        Gets a diffraction experiment that contains -ve and +ve angles, and returns two diffraction experiments:
         one from the +ve bit, and a negated version from the -ve side
         Returns
         -------
-        A tuple containing two diffraction patterns. The first is from the +ve side, the second from the -ve side
+        A tuple containing two diffraction experiments. The first is from the +ve side, the second from the -ve side
         """
-        pass
+        diffpats_p = []
+        diffpats_n = []
+        all_none_p = True
+        all_none_n = True
+        for dp in self.diffpats:
+            dpp, dpn = dp.split_on_zero()
+            if dpp is not None:
+                all_none_p = False
+            if dpn is not None:
+                all_none_n = False
+            diffpats_p.append(dpp)
+            diffpats_n.append(dpn)
+
+        dep = DiffractionExperiment(diffpats=diffpats_p) if not all_none_p else None
+        den = DiffractionExperiment(diffpats=diffpats_n) if not all_none_n else None
+        return dep, den
+
+    def remove_nones(self, in_place: bool = True) -> None | DiffractionExperiment:
+        """
+        Looks at all the DiffractionPatterns, and if any are None, then it removes them
+        :return: None or DiffractionExperiment
+        """
+        if in_place:
+            self.diffpats[:] = [dp for dp in self.diffpats if dp is not None]
+        else:
+            dps = [copy.deepcopy(dp) for dp in self.diffpats if dp is not None]
+            return DiffractionExperiment(diffpats=dps)
 
 
 # --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
+
 
 class DiffractionDataPointMean:
     """
@@ -1482,7 +1520,7 @@ class Read:
     """
 
     @staticmethod
-    def read(filename: str):
+    def read(filename: str) -> List[DiffractionDataPoint]:
         """
         This guesses which read method to try based on filename.
         :param filename: string representing the contents of the file
@@ -1494,11 +1532,13 @@ class Read:
             return Read.xy(filename)
         elif filename.endswith(".dat"):
             return Read.dat(filename)
+        elif filename.endswith(".xrdml"):
+            return Read.xrdml(filename)
         # getting here means that I don't know how to read the file
         raise ValueError(f"I don't know how to read {filename}.")
 
     @staticmethod
-    def xye(filename: str, is_xy: bool = False, sort: bool = True):
+    def xye(filename: str, is_xy: bool = False, sort: bool = True) -> List[DiffractionDataPoint]:
         lst = []
         increasing = True
         # print(f"Now reading {filename}.")
@@ -1529,11 +1569,11 @@ class Read:
         return lst
 
     @staticmethod
-    def xy(filename: str):
+    def xy(filename: str) -> List[DiffractionDataPoint]:
         return Read.xye(filename, is_xy=True)
 
     @staticmethod
-    def dat(filename: str):
+    def dat(filename: str) -> List[DiffractionDataPoint]:
         lst = []
         # print(f"Now reading {filename}.")
         with open(filename) as f:
@@ -1568,6 +1608,34 @@ class Read:
             raise ValueError(f"Received {i} points, should have {num_points}.")
         return lst
 
+    @staticmethod
+    def xrdml(filename: str) -> List[DiffractionDataPoint]:
+        """
+        A very simple implementation of how to read an XRDML file
+        :param filename:
+        :return:
+        """
+        lst = []
+        # print(f"Now reading {filename}.")
+        with open(filename) as f:
+            print(f"Reading from {os.path.abspath(filename)}.")
+
+            document = ET.parse(filename)
+            startAngle = document.find(".//{*}xrdMeasurement/{*}scan[1]/{*}dataPoints/{*}positions[1]/{*}startPosition")
+            stopAngle = document.find(".//{*}xrdMeasurement/{*}scan[1]/{*}dataPoints/{*}positions[1]/{*}endPosition")
+            intensities = document.find(".//{*}xrdMeasurement/{*}scan[1]/{*}dataPoints/{*}intensities")
+
+            startAngle = float(startAngle.text)
+            stopAngle = float(stopAngle.text)
+            intensities = [float(val) for val in intensities.text.split()]
+            step_size = (stopAngle - startAngle) / (len(intensities) - 1)
+
+            for i, intensity in enumerate(intensities):
+                ddp = DiffractionDataPoint(startAngle + i * step_size, intensity)
+                lst.append(ddp)
+
+        return lst
+
 
 # --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
@@ -1579,14 +1647,15 @@ class Write:
     """
 
     @staticmethod
-    def _get_padding(dp: DiffractionPattern):
+    def _get_padding(dp: DiffractionPattern)->tuple(int, int, int):
         x_pad = int(math.log10(max(dp.xs))) + 2
         y_pad = int(math.log10(max(dp.ys))) + 2
         e_pad = max(int(math.log10(max(dp.es))), 0) + 2
         return x_pad, y_pad, e_pad
 
     @staticmethod
-    def _get_formatted(d: DiffractionDataPoint, x_dp: int, y_dp: int, e_dp: int, x_pad: int, y_pad: int, e_pad: int):
+    def _get_formatted(d: DiffractionDataPoint, x_dp: int, y_dp: int, e_dp: int,
+                       x_pad: int, y_pad: int, e_pad: int) -> tuple(str, str, str):
         a = f"{d.x:{1 + x_pad + x_dp}.{x_dp}f}"
         i = f"{d.y:{1 + y_pad + y_dp}.{y_dp}f}"
         e = f"{d.e:{1 + e_pad + e_dp}.{e_dp}f}"
@@ -1594,7 +1663,7 @@ class Write:
 
     @staticmethod
     def xye(dp: DiffractionPattern, filename: str,
-            dp_angle: int = 5, dp_intensity: int = 3, dp_error: int = 3, is_xy: bool = False):
+            dp_angle: int = 5, dp_intensity: int = 3, dp_error: int = 3, is_xy: bool = False)->None:
         """
         To write a nice XYE file to a file.
 
@@ -1628,38 +1697,13 @@ class Write:
                     f.write(f"{a}{i}{e}\n")
 
     @staticmethod
-    def xy(dp: DiffractionPattern, filename: str, dp_angle: int = 5, dp_intensity: int = 3, dp_error: int = 3):
+    def xy(dp: DiffractionPattern, filename: str, dp_angle: int = 5, dp_intensity: int = 3, dp_error: int = 3)->None:
         Write.xye(dp, filename, dp_angle, dp_intensity, dp_error, is_xy=True)
 
     @staticmethod
-    def dat(dp: DiffractionPattern, filename: str, dp_angle: int = 5, dp_intensity: int = 0):
-        diffpat = dp.diffpat
-        x_pad, y_pad, _ = Write._get_padding(dp)
-        x_start = diffpat[0].x
-        x_stop = diffpat[-1].x
-        num_points = len(diffpat)
-        x_step = (x_stop - x_start) / (num_points - 1)
-
-        print(f"Writing to {os.path.abspath(filename)}.")
-        with open(filename, "w") as f:
-            f.write("\n")
-            f.write("\n")
-            f.write("\n")
-            f.write("\n")
-
-            x_start = f"{x_start:.{dp_angle}f}"
-            x_step = f"{x_step:.{dp_angle}f}"
-            x_stop = f"{x_stop:.{dp_angle}f}"
-            f.write(f"{x_start} {x_step} {x_stop}\n")
-            for k, d in enumerate(diffpat, start=1):
-                _, i, _ = Write._get_formatted(d, dp_angle, dp_intensity, 3, x_pad, y_pad, 3)
-                f.write(f"{i}")
-                if k % 10 == 0:
-                    f.write("\n")
-
-    @staticmethod
     def cif(dp: DiffractionPattern, filename: str, dp_angle: int = 5,
-            data_block: str = "pdiffutils", x_type: str = "_pd_meas_2theta_scan", y_type: str = "_pd_meas_intensity_total"):
+            data_block: str = "pdiffutils", x_type: str = "_pd_meas_2theta_scan", y_type: str = "_pd_meas_intensity_total",
+            other_dataitems: str = None)->None:
         diffpat = dp.diffpat
         x_pad, _, _ = Write._get_padding(dp)
         ys = [val_err_str(y, e) for y, e in zip(dp.ys, dp.es)]
@@ -1670,6 +1714,8 @@ class Write:
         print(f"Writing to {os.path.abspath(filename)}.")
         with open(filename, "w") as f:
             f.write(f"data_{data_block}\n")
+            if other_dataitems:
+                f.write(other_dataitems)
             f.write("\tloop_\n")
             f.write(f"\t{x_type}\n")
             f.write(f"\t{y_type}\n")
@@ -1679,30 +1725,26 @@ class Write:
 
 
 def main():
-    def is_all_equal(d1: DiffractionPattern, d2: DiffractionPattern):
-        for ddp1, ddp2 in zip(d1.diffpat, d2.diffpat):
-            if not math.isclose(ddp1.x, ddp2.x):
-                return False
-            if not math.isclose(ddp1.y, ddp2.y):
-                return False
-            if not math.isclose(ddp1.e, ddp2.e):
-                return False
-        return True
+    file = r"..\..\data\1.xrdml"
+    document = ET.parse(file)
 
-    diffpat1 = [DiffractionDataPoint(5.00, 2.1),
-                DiffractionDataPoint(5.01, 4.1),
-                DiffractionDataPoint(5.02, 4.1),
-                DiffractionDataPoint(5.03, 3.1),
-                DiffractionDataPoint(5.04, 6.1)]
-    dp1 = DiffractionPattern(diffpat=diffpat1)
-    diffpat2 = [DiffractionDataPoint(5.01, 4.1),
-                DiffractionDataPoint(5.02, 4.1),
-                DiffractionDataPoint(5.03, 3.1)]
-    dp2 = DiffractionPattern(diffpat=diffpat2)
+    startAngle  = document.find(".//{*}xrdMeasurement/{*}scan[1]/{*}dataPoints/{*}positions[1]/{*}startPosition")
+    stopAngle   = document.find(".//{*}xrdMeasurement/{*}scan[1]/{*}dataPoints/{*}positions[1]/{*}endPosition")
+    intensities = document.find(".//{*}xrdMeasurement/{*}scan[1]/{*}dataPoints/{*}intensities")
 
-    print(f"{dp1=}")
-    dp1.trim(5.01, 5.03, in_place=False)
-    print(f"{dp1=}")
+    startAngle = float(startAngle.text)
+    stopAngle = float(stopAngle.text)
+    intensities = [float(val) for val in intensities.text.split(' ')]
+    step_size = (stopAngle - startAngle) / (len(intensities) - 1)
+
+    print(f"{startAngle=}, {stopAngle=}, {step_size=}")
+    print(f"{intensities=}")
+    print(f"{startAngle + (len(intensities) - 1) * step_size}")
+
+    dp = DiffractionPattern(diffpat=Read.xrdml(file))
+
+    print(dp)
+
 
 if __name__ == "__main__":
     main()
