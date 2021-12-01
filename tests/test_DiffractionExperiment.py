@@ -8,7 +8,7 @@ import operator
 
 
 # remember, I've overridden ==
-def is_all_equal(d1: DiffractionExperiment, d2: DiffractionExperiment):
+def is_all_equal(d1: DiffractionExperiment, d2: DiffractionExperiment):  # pragma: no cover
     for dp1, dp2 in zip(d1.diffpats, d2.diffpats):
         for ddp1, ddp2 in zip(dp1.diffpat, dp2.diffpat):
             if not math.isclose(ddp1.x, ddp2.x):
@@ -397,9 +397,9 @@ def test_average_patterns():
     de1.average_patterns(2, is_rolling=False, in_place=True)
     assert is_all_equal(de1, de2)
 
-@pytest.mark.xfail
+@pytest.mark.skip
 def test_interpolate():
-    assert False
+    pass
 
 
 @pytest.mark.skip
