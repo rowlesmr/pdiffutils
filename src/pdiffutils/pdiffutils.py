@@ -64,7 +64,7 @@ class DiffractionDataPoint:
     def zeroOffset(self, offset: float):
         self.x += offset
 
-    def average_with(self, ddps: List[DiffractionDataPoint], in_place: bool = True) -> DiffractionDataPoint:
+    def average_with(self, ddps: List[DiffractionDataPoint], in_place: bool = True, sum_instead: bool = False) -> DiffractionDataPoint:
         if not ddps:  # empty list
             return copy.deepcopy(self)
 
@@ -75,12 +75,13 @@ class DiffractionDataPoint:
                 raise ValueError(f"trying to average data at {ddp.x} with data at {self.x}.")
             ddp_mean.increment(ddp)
 
+        r = ddp_mean.get_result() if not sum_instead else ddp_mean.get_result() * ddp_mean.n
         if in_place:
-            self.x = ddp_mean.get_result().x
-            self.y = ddp_mean.get_result().y
-            self.e = ddp_mean.get_result().e
+            self.x = r.x
+            self.y = r.y
+            self.e = r.e
         else:
-            return ddp_mean.get_result()
+            return r
 
     def __str__(self) -> str:
         return f"{self.x:.5f} {self.y:.3f} {self.e:.3f}"
@@ -512,6 +513,7 @@ class DiffractionPattern:
         """
         Trims a diffraction pattern such that there exist no angles less
         than min_angle, and no angles greater than max_angle.
+        ie min_x <= angles <= max_x
 
         Parameters
         ----------
@@ -521,7 +523,7 @@ class DiffractionPattern:
             the maximum angle you want to see in your diffraction pattern. The default is 180.
         in_place: bool, alter self, or return a new Diffractionpattern?
         """
-        dp = [xdp for xdp in self.diffpat if min_x <= xdp.x <= max_x]
+        dp = [ddp for ddp in self.diffpat if min_x <= ddp.x <= max_x]
 
         if in_place:
             self.diffpat[:] = dp
@@ -603,7 +605,7 @@ class DiffractionPattern:
 
         return pos, neg
 
-    def average_with(self, dps: List[DiffractionPattern], in_place: bool = True) -> Optional[DiffractionPattern]:
+    def average_with(self, dps: List[DiffractionPattern], in_place: bool = True, sum_instead: bool = False) -> Optional[DiffractionPattern]:
         # get deepcopy of the diffpats so I'm not plagued by pointer errors
 
         src = self.diffpat if in_place else copy.deepcopy(self.diffpat)
@@ -624,7 +626,7 @@ class DiffractionPattern:
                 elif p2 == p1:
                     tmp.append(p2)
                     j += 1
-            dest.append(p1.average_with(tmp, in_place=False))
+            dest.append(p1.average_with(tmp, in_place=False, sum_instead=sum_instead))
             tmp = []
             i = j
 
@@ -1382,7 +1384,7 @@ class DiffractionExperiment:
             dps = [dp.downsample(ds, in_place=False) for dp in self.diffpats]
             return DiffractionExperiment(diffpats=dps)
 
-    def average_patterns(self, num: int, is_rolling: bool = True, in_place: bool = True) -> None | DiffractionExperiment:
+    def average_patterns(self, num: int, is_rolling: bool = True, in_place: bool = True, sum_instead: bool = False) -> None | DiffractionExperiment:
         """
         Averages num patterns. If rolling average, then
         patterns 1..num are averaged, then 2..num+1, 3--num+2 and so on.
@@ -1401,7 +1403,7 @@ class DiffractionExperiment:
         for i in range(0, len(self.diffpats) - num + 1, range_step):
             dp = copy.deepcopy(self.diffpats[i])
             tmp = [self.diffpats[i + j] for j in range(1, num)]
-            dps.append(dp.average_with(tmp, in_place=False))
+            dps.append(dp.average_with(tmp, in_place=False, sum_instead=sum_instead))
 
         if in_place:
             self.diffpats[:] = dps
@@ -1732,7 +1734,7 @@ def main():
     diffpat = copy.deepcopy(diffpat2 + diffpat1)
     dp0a = DiffractionPattern(diffpat=diffpat)
     dp0b = copy.deepcopy(dp0a)
-    de0 = DiffractionExperiment(diffpats=[dp0a,dp0b])
+    de0 = DiffractionExperiment(diffpats=[dp0a, dp0b])
 
     de1 = DiffractionExperiment(diffpats=[DiffractionPattern(diffpat=copy.deepcopy(diffpat1))])
     de2 = DiffractionExperiment(diffpats=[DiffractionPattern(diffpat=copy.deepcopy(diffpat2))])
@@ -1744,6 +1746,7 @@ def main():
 
     print(f"{dep=}")
     print(f"{den=}")
+
 
 if __name__ == "__main__":
     main()
