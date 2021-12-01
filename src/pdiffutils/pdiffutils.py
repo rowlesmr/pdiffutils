@@ -1654,7 +1654,7 @@ class Write:
         return a, i, e
 
     @staticmethod
-    def xye(dp: DiffractionPattern, filename: str,
+    def xye(dp: DiffractionPattern, filenamebase: str,
             dp_angle: int = 5, dp_intensity: int = 3, dp_error: int = 3, is_xy: bool = False) -> None:
         """
         To write a nice XYE file to a file.
@@ -1676,6 +1676,8 @@ class Write:
         :param is_xy:
         :return:
         """
+        ext = ".xy" if is_xy else ".xye"
+        filename = filenamebase + ext
         print(f"Writing to {os.path.abspath(filename)}.")
         with open(filename, "w") as f:
             diffpat = dp.diffpat
@@ -1689,11 +1691,22 @@ class Write:
                     f.write(f"{a}{i}{e}\n")
 
     @staticmethod
-    def xy(dp: DiffractionPattern, filename: str, dp_angle: int = 5, dp_intensity: int = 3, dp_error: int = 3) -> None:
-        Write.xye(dp, filename, dp_angle, dp_intensity, dp_error, is_xy=True)
+    def xyes(de: DiffractionExperiment, filenamebase: str,
+             dp_angle: int = 5, dp_intensity: int = 3, dp_error: int = 3, is_xy: bool = False):
+        pad = int(math.log10(len(de))) + 1
+        for i, dp in enumerate(de.diffpats):
+            Write.xye(dp, f'{filenamebase}_{i:0{pad}}', dp_angle=dp_angle, dp_intensity=dp_intensity, dp_error=dp_error, is_xy=is_xy)
 
     @staticmethod
-    def cif(dp: DiffractionPattern, filename: str, dp_angle: int = 5,
+    def xy(dp: DiffractionPattern, filenamebase: str, dp_angle: int = 5, dp_intensity: int = 3, dp_error: int = 3) -> None:
+        Write.xye(dp, filenamebase, dp_angle, dp_intensity, dp_error, is_xy=True)
+
+    @staticmethod
+    def xys(de: DiffractionExperiment, filenamebase: str, dp_angle: int = 5, dp_intensity: int = 3, dp_error: int = 3) -> None:
+        Write.xyes(de, filenamebase, dp_angle, dp_intensity, dp_error, is_xy=True)
+
+    @staticmethod
+    def cif(dp: DiffractionPattern, filenamebase: str, dp_angle: int = 5,
             data_block: str = "pdiffutils", x_type: str = "_pd_meas_2theta_scan", y_type: str = "_pd_meas_intensity_total",
             other_dataitems: str = None) -> None:
         diffpat = dp.diffpat
@@ -1703,6 +1716,7 @@ class Write:
         for y in ys:
             max_len_y = max(max_len_y, len(y))
 
+        filename = filenamebase + ".cif"
         print(f"Writing to {os.path.abspath(filename)}.")
         with open(filename, "w") as f:
             f.write(f"data_{data_block}\n")
@@ -1715,37 +1729,34 @@ class Write:
                 x, _, _ = Write._get_formatted(d, dp_angle, 3, 3, x_pad, 3, 3)
                 f.write(f"\t{x} {y.rjust(max_len_y, ' ')}\n")
 
+    @staticmethod
+    def cifs(de: DiffractionExperiment, filenamebase: str, dp_angle: int = 5,
+             data_blocks: str | List[str] = "pdiffutils",
+             x_type: str = "_pd_meas_2theta_scan", y_type: str = "_pd_meas_intensity_total",
+             other_dataitems: str | List[str] = None) -> None:
+        pad = int(math.log10(len(de))) + 1
+        if other_dataitems is None:
+            other_dataitems = [None] * len(de)
+        if isinstance(data_blocks, list) and len(data_blocks) != len(de):
+                raise ValueError(f"You gave {len(data_blocks)} data block names. You need {len(de)}.")
+        if isinstance(other_dataitems, list) and len(other_dataitems) != len(de):
+                raise ValueError(f"You gave {len(other_dataitems)} other data items. You need {len(de)}.")
+        if isinstance(other_dataitems, str):
+            other_dataitems = [other_dataitems] * len(de)
+        if isinstance(data_blocks, str):
+            data_blocks= [f"{data_blocks}_{i:0{pad}}" for i in range(len(de))]
+
+        for i, dp, db, other in enumerate(zip(de.diffpats, data_blocks, other_dataitems)):
+            Write.cif(dp, f'{filenamebase}_{i:0{pad}}', dp_angle=dp_angle, data_block=db,
+                      x_type=x_type, y_type=y_type, other_dataitems=other)
+
 
 def main():
-    diffpat1 = [DiffractionDataPoint(5.00, 4.1),
-                DiffractionDataPoint(5.01, 2.1),
-                DiffractionDataPoint(5.02, 3.1),
-                DiffractionDataPoint(5.03, 4.1),
-                DiffractionDataPoint(5.04, 6.1),
-                DiffractionDataPoint(5.05, 5.1)]
-
-    diffpat2 = [DiffractionDataPoint(-5.05, 5.1),
-                DiffractionDataPoint(-5.04, 6.1),
-                DiffractionDataPoint(-5.03, 4.1),
-                DiffractionDataPoint(-5.02, 3.1),
-                DiffractionDataPoint(-5.01, 2.1),
-                DiffractionDataPoint(-5.00, 4.1)]
-
-    diffpat = copy.deepcopy(diffpat2 + diffpat1)
-    dp0a = DiffractionPattern(diffpat=diffpat)
-    dp0b = copy.deepcopy(dp0a)
-    de0 = DiffractionExperiment(diffpats=[dp0a, dp0b])
-
-    de1 = DiffractionExperiment(diffpats=[DiffractionPattern(diffpat=copy.deepcopy(diffpat1))])
-    de2 = DiffractionExperiment(diffpats=[DiffractionPattern(diffpat=copy.deepcopy(diffpat2))])
-    de2.negate()
-    de2.reverse()
-
-    de0 = DiffractionExperiment(diffpats=[DiffractionPattern(diffpat=copy.deepcopy(diffpat2))])
-    dep, den = de0.split_on_zero()
-
-    print(f"{dep=}")
-    print(f"{den=}")
+    n = 343
+    pad = int(math.log10(n)) + 1
+    r = 26
+    base = "filenamehere"
+    print(f'{base}_{r:0{pad}}.xye')
 
 
 if __name__ == "__main__":
