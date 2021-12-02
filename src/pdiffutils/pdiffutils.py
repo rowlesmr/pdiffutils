@@ -453,7 +453,7 @@ class DiffractionPattern:
     """
     DROP_POINTS_IN_SPLINE = 5
 
-    def __init__(self, diffpat: List[DiffractionDataPoint] = None, filename: str = None, meta=None):
+    def __init__(self, diffpat: List[DiffractionDataPoint] = None, filename: str = None, meta: dict = None):
         """
         Read in inital data in order to make everything.
         Angles must be strictly increasing
@@ -1280,7 +1280,7 @@ class DiffractionExperiment:
     It is essentially a list of DiffractionPatterns.
     """
 
-    def __init__(self, diffpats: List[DiffractionPattern], filename: str = None, meta=None):
+    def __init__(self, diffpats: List[DiffractionPattern] = None, filename: str = None, meta: dict = None):
         """
         Read in inital data in order to make everything.
         Angles must be strictly increasing
@@ -1296,7 +1296,7 @@ class DiffractionExperiment:
         None.
         """
         self.filename = filename
-        self.diffpats = diffpats
+        self.diffpats = Read.read(filename) if diffpats is None else diffpats
         self.meta = meta  # any information at all about this diffraction pattern. Can be anything of any type.
 
     def negate(self):
@@ -1399,11 +1399,14 @@ class DiffractionExperiment:
             raise ValueError(f"You tried to average {num} patterns where there is only {len(self)} to choose from.")
 
         range_step = 1 if is_rolling else num
-        dps = []
-        for i in range(0, len(self.diffpats) - num + 1, range_step):
+        dps: List[DiffractionPattern] = []
+        for i in range(0, len(self) - num + 1, range_step):
             dp = copy.deepcopy(self.diffpats[i])
             tmp = [self.diffpats[i + j] for j in range(1, num)]
-            dps.append(dp.average_with(tmp, in_place=False, sum_instead=sum_instead))
+            ave_num = i / range_step
+            dp.average_with(tmp, in_place=False, sum_instead=sum_instead)
+            dp.meta["average_pattern"] = ave_num
+            dps.append(dp)
 
         if in_place:
             self.diffpats[:] = dps
@@ -1512,12 +1515,13 @@ class Read:
     """
 
     @staticmethod
-    def read(filename: str) -> List[DiffractionDataPoint]:
+    def read(filename: str) -> List[DiffractionDataPoint | DiffractionPattern]:
         """
         This guesses which read method to try based on filename.
         :param filename: string representing the contents of the file
         :return: a list of XRayDataPoints
         """
+        filename = filename.lower()
         if filename.endswith(".xye"):
             return Read.xye(filename)
         elif filename.endswith(".xy"):
@@ -1526,6 +1530,8 @@ class Read:
             return Read.dat(filename)
         elif filename.endswith(".xrdml"):
             return Read.xrdml(filename)
+        elif filename.endswith(".ttx"):
+            return Read.ttx(filename)
         # getting here means that I don't know how to read the file
         raise ValueError(f"I don't know how to read {filename}.")
 
@@ -1628,7 +1634,42 @@ class Read:
 
         return lst
 
+    @staticmethod
+    def ttx(filename: str) -> List[DiffractionPattern]:
+        lst = []
+        with open(filename) as f:
+            print(f"Reading from {os.path.abspath(filename)}.")
+            line = f.readline()  # first line
+            line = f.readline()  # second line
+            line = f.readline()  # third line - the names of the dictionary keys
+            meta_keys = line.strip().split()
+            meta_keys += ["Scan", "Acq_time"]
+            line = f.readline()  # the first ***** line
 
+            while True:
+                line = f.readline()  # scan number
+                if not line:
+                    break
+                scan_num = line.strip().split()[-1]
+                line = f.readline()  # motor positions
+                motor_posns = line.strip().split()
+                line = f.readline()  # acquisition time
+                acq_time = line.strip().split()[-1]
+
+                motor_posns += [scan_num, acq_time]
+                meta = dict(zip(meta_keys, motor_posns))
+                ddps = []
+                while not line.startswith("***"):
+                    line = f.readline()
+                    if not line:
+                        break
+                    if line.startswith("***"):
+                        continue
+                    angle, intensity = line.strip().split(",")
+                    ddp = DiffractionDataPoint(float(angle), float(intensity))
+                    ddps.append(ddp)
+                lst.append(DiffractionPattern(diffpat=ddps, filename=filename, meta=meta))
+        return lst
 
 
 # --------------------------------------------------------------------------------------------------
@@ -1641,15 +1682,19 @@ class Write:
     """
 
     @staticmethod
-    def _get_padding(dp: DiffractionPattern) -> tuple(int, int, int):
-        x_pad = int(math.log10(max(dp.xs))) + 2
-        y_pad = int(math.log10(max(dp.ys))) + 2
-        e_pad = max(int(math.log10(max(dp.es))), 0) + 2
+    def _get_padding(dp: DiffractionPattern) -> tuple[int, int, int]:
+        x_val = max(math.fabs(max(dp.xs)), math.fabs(min(dp.xs)))
+        y_val = max(math.fabs(max(dp.ys)), math.fabs(min(dp.ys)))
+        e_val = max(math.fabs(max(dp.es)), math.fabs(min(dp.es)))
+
+        x_pad =     int(math.log10(x_val)) + 3
+        y_pad =     int(math.log10(y_val)) + 3
+        e_pad = max(int(math.log10(e_val)), 0) + 2
         return x_pad, y_pad, e_pad
 
     @staticmethod
     def _get_formatted(d: DiffractionDataPoint, x_dp: int, y_dp: int, e_dp: int,
-                       x_pad: int, y_pad: int, e_pad: int) -> tuple(str, str, str):
+                       x_pad: int, y_pad: int, e_pad: int) -> tuple[str, str, str]:
         a = f"{d.x:{1 + x_pad + x_dp}.{x_dp}f}"
         i = f"{d.y:{1 + y_pad + y_dp}.{y_dp}f}"
         e = f"{d.e:{1 + e_pad + e_dp}.{e_dp}f}"
@@ -1682,9 +1727,8 @@ class Write:
         filename = filenamebase + ext
         print(f"Writing to {os.path.abspath(filename)}.")
         with open(filename, "w") as f:
-            diffpat = dp.diffpat
             x_pad, y_pad, e_pad = Write._get_padding(dp)
-
+            diffpat = dp.diffpat
             for d in diffpat:
                 a, i, e = Write._get_formatted(d, dp_angle, dp_intensity, dp_error, x_pad, y_pad, e_pad)
                 if is_xy:
@@ -1740,25 +1784,71 @@ class Write:
         if other_dataitems is None:
             other_dataitems = [None] * len(de)
         if isinstance(data_blocks, list) and len(data_blocks) != len(de):
-                raise ValueError(f"You gave {len(data_blocks)} data block names. You need {len(de)}.")
+            raise ValueError(f"You gave {len(data_blocks)} data block names. You need {len(de)}.")
         if isinstance(other_dataitems, list) and len(other_dataitems) != len(de):
-                raise ValueError(f"You gave {len(other_dataitems)} other data items. You need {len(de)}.")
+            raise ValueError(f"You gave {len(other_dataitems)} other data items. You need {len(de)}.")
         if isinstance(other_dataitems, str):
             other_dataitems = [other_dataitems] * len(de)
         if isinstance(data_blocks, str):
-            data_blocks= [f"{data_blocks}_{i:0{pad}}" for i in range(len(de))]
+            data_blocks = [f"{data_blocks}_{i:0{pad}}" for i in range(len(de))]
 
         for i, dp, db, other in enumerate(zip(de.diffpats, data_blocks, other_dataitems)):
             Write.cif(dp, f'{filenamebase}_{i:0{pad}}', dp_angle=dp_angle, data_block=db,
                       x_type=x_type, y_type=y_type, other_dataitems=other)
 
+    @staticmethod
+    def xyz(de: DiffractionExperiment, filenamebase: str,
+            dp_angle: int = 5, dp_intensity: int = 3, ys: list = None)->None:
+        """
+        Write an XYZ file of a DiffractionExperiment. If you want a different y-ordinate, you need to create
+        that yourself and have it all pre-formatted, and pass it in to the function.
+        :param de: the DiffractionExperiment to write to file
+        :param filenamebase: the name of the file to write to, without any extension
+        :param dp_angle: how many decimal places to write for the x-ordinate
+        :param dp_intensity: how many decimal place to write for the intensity (z-ordinate)
+        :param ys: preformatted list of strings ready to to put directly into the output. or None, if you just want the patterns numbered
+        :return: None.
+        """
+        if ys and len(ys) != len(de):
+            raise ValueError(f"You gave {len(ys)} y values. You need {len(de)}.")
+        filename = filenamebase + ".xyz"
+
+        x_pad = 0
+        i_pad = 0
+        for dp in de.diffpats:
+            dp_x_pad, dp_i_pad, _ = Write._get_padding(dp)
+            x_pad = max(x_pad, dp_x_pad)
+            i_pad = max(i_pad, dp_i_pad)
+        y_pad = len(str(len(de))) + 2
+
+        if not ys:
+            ys = [str(i+1).rjust(y_pad) for i in range(len(de))]
+
+        with open(filename, "w") as f:
+            print(f"Writing to {os.path.abspath(filename)}.")
+            for dp, y in zip(de.diffpats, ys):
+                for ddp in dp.diffpat:
+                    a, i, _ = Write._get_formatted(ddp, dp_angle, dp_intensity, 3, x_pad, i_pad, 3)
+                    f.write(f"{a}{y}{i}\n")
+
 
 def main():
-    n = 343
-    pad = int(math.log10(n)) + 1
-    r = 26
-    base = "filenamehere"
-    print(f'{base}_{r:0{pad}}.xye')
+
+    x = 303.456789
+    pad = int(math.log10(math.fabs(x))) + 2
+    dp = 3
+    a = f"{x:{1 + pad + dp}.{dp}f}"
+    print(f"{pad=}\n{a=}")
+
+
+
+    file = r"..\..\data\Ce_short.TTX"
+
+    de = DiffractionExperiment(filename=file)
+    de.downsample(2)
+    de.interpolate(0.03)
+    de.average_patterns(2, is_rolling=False, sum_instead=True)
+    Write.xyz(de, r"..\..\data\Ce_short", dp_angle=2, dp_intensity=2)
 
 
 if __name__ == "__main__":
