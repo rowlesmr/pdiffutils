@@ -43,6 +43,19 @@ def val_err_str(val: float, err: float) -> str:
     return f"{val:.{max(0, dps)}f}({err:.0f})"
 
 
+def shrink_path_for_display(filename: str, max_len: int = 63) -> str:
+    path_str = os.path.abspath(filename)
+    if len(path_str) < max_len:
+        return path_str
+    if max_len < 5:
+        raise ValueError(f"{max_len} is too short. Try a sensible value, like 43 or something...")
+    max_len -= 3
+    max_len //= 2
+    path_left = path_str[:max_len]
+    path_right = path_str[-max_len:]
+    return f"{path_left}...{path_right}"
+
+
 class DiffractionDataPoint:
     """
     This is a data point in a diffraction patter.
@@ -462,15 +475,15 @@ class DiffractionPattern:
         ----------
         diffpat : a list of DiffractionDataPoints
         filename: a string representing the filename of the diffraction data
-        meta: any metainformation about the diffraction pattern.
+        meta: a dictionary containing metainformation about the diffraction pattern.
 
         Returns
         -------
         None.
         """
-        self.filename = filename
+        self.filename = filename or ""
         self.diffpat = Read.read(filename) if diffpat is None else diffpat
-        self.meta = meta  # any information at all about this diffraction pattern. Can be anything of any type.
+        self.meta = meta or {}
 
         self.xs = [ddp.x for ddp in self.diffpat]
         self.ys = [ddp.y for ddp in self.diffpat]
@@ -482,19 +495,17 @@ class DiffractionPattern:
     def negate(self):
         for d in self.diffpat:
             d.negate()
+        self.meta["negate"] = True if "negate" not in self.meta else not self.meta["negate"]
 
     def reverse(self):
         self.diffpat.reverse()
+        self.meta["reverse"] = True if "reverse" not in self.meta else not self.meta["reverse"]
 
-    def zero_offset(self, offset: float | List[float]):
+    def zero_offset(self, offset: float):
         if isinstance(offset, float):
             for d in self.diffpat:
                 d.zeroOffset(offset)
-        elif isinstance(offset, list):
-            if len(offset) != len(self.diffpat):
-                raise ValueError(f"Need {len(self.diffpat)} values. Was given {len(offset)} instead.")
-            for d, o in zip(self.diffpat, offset):
-                d.zeroOffset(o)
+        self.meta["zero_offset"] = offset
 
     def __len__(self) -> int:
         return len(self.diffpat)
@@ -526,9 +537,14 @@ class DiffractionPattern:
         dp = [ddp for ddp in self.diffpat if min_x <= ddp.x <= max_x]
 
         if in_place:
-            self.diffpat[:] = dp
+            if len(dp) < len(self):
+                self.diffpat[:] = dp
+                self.meta["trim"] = True
         else:
-            return DiffractionPattern(diffpat=dp, filename=self.filename, meta=copy.deepcopy(self.meta))
+            meta = copy.deepcopy(self.meta)
+            if len(dp) < len(self):
+                meta["trim"] = True
+            return DiffractionPattern(diffpat=dp, filename=self.filename, meta=meta)
 
     def sort(self, in_place: bool = True):
         """
@@ -536,10 +552,13 @@ class DiffractionPattern:
         """
         if in_place:
             self.diffpat.sort()
+            self.meta["sort"] = True
         else:
             dp = copy.deepcopy(self.diffpat)
             dp.sort()
-            return DiffractionPattern(diffpat=dp, filename=self.filename, meta=copy.deepcopy(self.meta))
+            meta = copy.deepcopy(self.meta)
+            meta["sort"] = True
+            return DiffractionPattern(diffpat=dp, filename=self.filename, meta=meta)
 
     def downsample(self, ds: int, in_place: bool = True) -> Optional[DiffractionPattern]:
         """
@@ -566,8 +585,11 @@ class DiffractionPattern:
 
         if in_place:
             self.diffpat[:] = r
+            self.meta["downsample"] = ds
         else:
-            return DiffractionPattern(r, filename=self.filename, meta=copy.deepcopy(self.meta))
+            meta = copy.deepcopy(self.meta)
+            meta["downsample"] = ds
+            return DiffractionPattern(r, filename=self.filename, meta=meta)
 
     def split_on_zero(self) -> tuple[DiffractionPattern | None, DiffractionPattern | None]:
         """
@@ -581,8 +603,8 @@ class DiffractionPattern:
         max_ = self.diffpat[-1].x
         do_pos = False  # which angles do I do? positive? negative?
         do_neg = False
-        pos = None
-        neg = None
+        pos: DiffractionPattern = None
+        neg: DiffractionPattern = None
 
         if min_ < 0 and max_ > 0:
             do_pos = True
@@ -595,21 +617,21 @@ class DiffractionPattern:
             raise ValueError("Your data isn't monotonically increasing")
 
         if do_pos:
-            pos = copy.deepcopy(self)
-            pos.trim(0.0001, 180)
+            pos = self.trim(0.0001, 180, in_place=False)
+            pos.meta["split_on_zero"] = True
         if do_neg:
-            neg = copy.deepcopy(self)
-            neg.trim(-180, -0.0001)
+            neg = self.trim(-180, -0.0001, in_place=False)
             neg.negate()
             neg.reverse()
+            neg.meta["split_on_zero"] = True
 
         return pos, neg
 
-    def average_with(self, dps: List[DiffractionPattern], in_place: bool = True, sum_instead: bool = False) -> Optional[DiffractionPattern]:
+    def average_with(self, other_dps: List[DiffractionPattern], in_place: bool = True, sum_instead: bool = False) -> Optional[DiffractionPattern]:
         # get deepcopy of the diffpats so I'm not plagued by pointer errors
 
         src = self.diffpat if in_place else copy.deepcopy(self.diffpat)
-        for dp in dps:
+        for dp in other_dps:
             src += copy.deepcopy(dp.diffpat)
         src.sort()
 
@@ -632,8 +654,11 @@ class DiffractionPattern:
 
         if in_place:
             self.diffpat[:] = dest
+            self.meta["average_with"] = len(other_dps)
         else:
-            return DiffractionPattern(diffpat=dest, filename=self.filename, meta=copy.deepcopy(self.meta))
+            meta = copy.deepcopy(self.meta)
+            meta["average_with"] = len(other_dps)
+            return DiffractionPattern(diffpat=dest, filename=self.filename, meta=meta)
 
     def interpolate(self, step_size: float, in_place: bool = True) -> None | DiffractionPattern:
         DP = DiffractionPattern
@@ -674,8 +699,11 @@ class DiffractionPattern:
 
         if in_place:
             self.diffpat[:] = r
+            self.meta["interpolate"] = step_size
         else:
-            return DiffractionPattern(diffpat=r, filename=self.filename, meta=copy.deepcopy(self.meta))
+            meta = copy.deepcopy(self.meta)
+            meta["interpolate"] = step_size
+            return DiffractionPattern(diffpat=r, filename=self.filename, meta=meta)
 
     @staticmethod
     def _generateInterpList(min_start: float, max_stop: float, step_size: float) -> List[float]:
@@ -1295,9 +1323,9 @@ class DiffractionExperiment:
         -------
         None.
         """
-        self.filename = filename
+        self.filename = filename or ""
         self.diffpats = Read.read(filename) if diffpats is None else diffpats
-        self.meta = meta  # any information at all about this diffraction pattern. Can be anything of any type.
+        self.meta = meta or {}
 
     def negate(self):
         for d in self.diffpats:
@@ -1403,8 +1431,8 @@ class DiffractionExperiment:
         for i in range(0, len(self) - num + 1, range_step):
             dp = copy.deepcopy(self.diffpats[i])
             tmp = [self.diffpats[i + j] for j in range(1, num)]
-            ave_num = i / range_step
-            dp.average_with(tmp, in_place=False, sum_instead=sum_instead)
+            ave_num = i / num
+            dp.average_with(tmp, in_place=True, sum_instead=sum_instead)
             dp.meta["average_pattern"] = ave_num
             dps.append(dp)
 
@@ -1541,7 +1569,7 @@ class Read:
         increasing = True
         # print(f"Now reading {filename}.")
         with open(filename) as f:
-            print(f"Reading from {os.path.abspath(filename)}.")
+            print(f"Reading from {shrink_path_for_display(filename)}.")
             for line in f:
                 s = line.split()  # splits on whitespace
                 try:
@@ -1575,7 +1603,7 @@ class Read:
         lst = []
         # print(f"Now reading {filename}.")
         with open(filename) as f:
-            print(f"Reading from {os.path.abspath(filename)}.")
+            print(f"Reading from {shrink_path_for_display(filename)}.")
             # this first for is to skip the comments and grab the start step stop values
             for line in f:
                 s = line.split()  # splits on whitespace
@@ -1616,7 +1644,7 @@ class Read:
         lst = []
         # print(f"Now reading {filename}.")
         with open(filename) as f:
-            print(f"Reading from {os.path.abspath(filename)}.")
+            print(f"Reading from {shrink_path_for_display(filename)}.")
 
             document = ET.parse(filename)
             startAngle = document.find(".//{*}xrdMeasurement/{*}scan[1]/{*}dataPoints/{*}positions[1]/{*}startPosition")
@@ -1638,7 +1666,7 @@ class Read:
     def ttx(filename: str) -> List[DiffractionPattern]:
         lst = []
         with open(filename) as f:
-            print(f"Reading from {os.path.abspath(filename)}.")
+            print(f"Reading from {shrink_path_for_display(filename)}.")
             line = f.readline()  # first line
             line = f.readline()  # second line
             line = f.readline()  # third line - the names of the dictionary keys
@@ -1687,8 +1715,8 @@ class Write:
         y_val = max(math.fabs(max(dp.ys)), math.fabs(min(dp.ys)))
         e_val = max(math.fabs(max(dp.es)), math.fabs(min(dp.es)))
 
-        x_pad =     int(math.log10(x_val)) + 3
-        y_pad =     int(math.log10(y_val)) + 3
+        x_pad = int(math.log10(x_val)) + 3
+        y_pad = int(math.log10(y_val)) + 3
         e_pad = max(int(math.log10(e_val)), 0) + 2
         return x_pad, y_pad, e_pad
 
@@ -1725,8 +1753,8 @@ class Write:
         """
         ext = ".xy" if is_xy else ".xye"
         filename = filenamebase + ext
-        print(f"Writing to {os.path.abspath(filename)}.")
         with open(filename, "w") as f:
+            print(f"Writing to {shrink_path_for_display(filename)}.")
             x_pad, y_pad, e_pad = Write._get_padding(dp)
             diffpat = dp.diffpat
             for d in diffpat:
@@ -1763,8 +1791,8 @@ class Write:
             max_len_y = max(max_len_y, len(y))
 
         filename = filenamebase + ".cif"
-        print(f"Writing to {os.path.abspath(filename)}.")
         with open(filename, "w") as f:
+            print(f"Writing to {shrink_path_for_display(filename)}.")
             f.write(f"data_{data_block}\n")
             if other_dataitems:
                 f.write(other_dataitems)
@@ -1798,7 +1826,7 @@ class Write:
 
     @staticmethod
     def xyz(de: DiffractionExperiment, filenamebase: str,
-            dp_angle: int = 5, dp_intensity: int = 3, ys: list = None)->None:
+            dp_angle: int = 5, dp_intensity: int = 3, ys: list = None) -> None:
         """
         Write an XYZ file of a DiffractionExperiment. If you want a different y-ordinate, you need to create
         that yourself and have it all pre-formatted, and pass it in to the function.
@@ -1821,11 +1849,11 @@ class Write:
             i_pad = max(i_pad, dp_i_pad)
         y_pad = len(str(len(de))) + 2
 
-        if not ys:
-            ys = [str(i+1).rjust(y_pad) for i in range(len(de))]
+        if not ys:  # then just number according to ordering in the de.
+            ys = [str(i + 1).rjust(y_pad) for i in range(len(de))]
 
         with open(filename, "w") as f:
-            print(f"Writing to {os.path.abspath(filename)}.")
+            print(f"Writing to {shrink_path_for_display(filename)}.")
             for dp, y in zip(de.diffpats, ys):
                 for ddp in dp.diffpat:
                     a, i, _ = Write._get_formatted(ddp, dp_angle, dp_intensity, 3, x_pad, i_pad, 3)
@@ -1833,23 +1861,6 @@ class Write:
 
 
 def main():
-
-    x = 303.456789
-    pad = int(math.log10(math.fabs(x))) + 2
-    dp = 3
-    a = f"{x:{1 + pad + dp}.{dp}f}"
-    print(f"{pad=}\n{a=}")
-
-
-
-    file = r"..\..\data\Ce_short.TTX"
-
-    de = DiffractionExperiment(filename=file)
-    de.downsample(2)
-    de.interpolate(0.03)
-    de.average_patterns(2, is_rolling=False, sum_instead=True)
-    Write.xyz(de, r"..\..\data\Ce_short", dp_angle=2, dp_intensity=2)
-
-
+    pass
 if __name__ == "__main__":
     main()

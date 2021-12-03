@@ -6,20 +6,23 @@ from pdiffutils import DiffractionPattern, DiffractionDataPoint
 import math
 import operator
 
-
+def is_all_equal_DDP(p1, p2):  # pragma: no cover
+    return bool(
+        math.isclose(p1.x, p2.x)
+        and math.isclose(p1.y, p2.y)
+        and math.isclose(p1.e, p2.e)
+    )
 # remember, I've overridden ==
 def is_all_equal(d1: DiffractionPattern, d2: DiffractionPattern):  # pragma: no cover
+    answer = True
     for ddp1, ddp2 in zip(d1.diffpat, d2.diffpat):
-        if not math.isclose(ddp1.x, ddp2.x):
-            return False
-        if not math.isclose(ddp1.y, ddp2.y):
-            return False
-        if not math.isclose(ddp1.e, ddp2.e):
-            return False
-    return True
+        answer &= is_all_equal_DDP(ddp1, ddp2)
+    answer &= d1.filename == d2.filename
+    answer &= d1.meta == d2.meta
+    return answer
 
 
-def make_dp(angle: float = 0, intensity: float = 0, error: float = 0, op: operator = None) -> DiffractionPattern:  # pragma: no cover
+def make_dp(angle: float = 0, intensity: float = 0, error: float = 0, op: operator = None, meta:dict=None) -> DiffractionPattern:  # pragma: no cover
     if op is None:
         angle = 0
         intensity = 0
@@ -32,7 +35,7 @@ def make_dp(angle: float = 0, intensity: float = 0, error: float = 0, op: operat
                 DiffractionDataPoint(op(5.03, angle), op(4.1, intensity), op(math.sqrt(4.1), error)),
                 DiffractionDataPoint(op(5.04, angle), op(6.1, intensity), op(math.sqrt(6.1), error)),
                 DiffractionDataPoint(op(5.05, angle), op(5.1, intensity), op(math.sqrt(5.1), error))]
-    return DiffractionPattern(diffpat=diffpat2)
+    return DiffractionPattern(diffpat=diffpat2, meta=meta)
 
 
 def test_construction():
@@ -52,7 +55,7 @@ def test_construction():
 
 def test_negate():
     dp1 = make_dp()
-    dp2 = make_dp(-1, 1, 1, operator.mul)
+    dp2 = make_dp(-1, 1, 1, operator.mul, {"negate": True})
     dp1.negate()
     assert is_all_equal(dp1, dp2)
 
@@ -71,29 +74,17 @@ def test_reverse():
                 DiffractionDataPoint(5.01, 2.1),
                 DiffractionDataPoint(5.00, 4.1)]
     dp1 = DiffractionPattern(diffpat=diffpat1)
-    dp2 = DiffractionPattern(diffpat=diffpat2)
+    dp2 = DiffractionPattern(diffpat=diffpat2, meta={"reverse": True})
     dp1.reverse()
     assert is_all_equal(dp1, dp2)
 
 
-def test_zeroOffset():
+def test_zero_offset():
     dp1 = make_dp()
     dp2 = make_dp(op=operator.add, angle=0.1)
+    dp2.meta["zero_offset"] = 0.1
     dp1.zero_offset(0.1)
     assert is_all_equal(dp1, dp2)
-
-    diffpat2 = [DiffractionDataPoint(5.00, 4.1),
-                DiffractionDataPoint(5.11, 2.1),
-                DiffractionDataPoint(5.22, 3.1),
-                DiffractionDataPoint(5.33, 4.1),
-                DiffractionDataPoint(5.44, 6.1),
-                DiffractionDataPoint(5.55, 5.1)]
-    dp2 = DiffractionPattern(diffpat=diffpat2)
-    dp1.zero_offset([-0.1, 0, .1, .2, .3, .4])
-    assert is_all_equal(dp1, dp2)
-
-    with pytest.raises(ValueError) as e_info:
-        dp1.zero_offset([-0.1, 0, .1, .2])
 
 
 def test_len():
@@ -111,7 +102,7 @@ def test_trim():
     diffpat2 = [DiffractionDataPoint(5.01, 4.1),
                 DiffractionDataPoint(5.02, 4.1),
                 DiffractionDataPoint(5.03, 3.1)]
-    dp2 = DiffractionPattern(diffpat=diffpat2)
+    dp2 = DiffractionPattern(diffpat=diffpat2, meta={"trim": True})
 
     dp0 = copy.deepcopy(dp1)
 
@@ -136,7 +127,7 @@ def test_sort():
                 DiffractionDataPoint(5.02, 4.1),
                 DiffractionDataPoint(5.03, 3.1),
                 DiffractionDataPoint(5.04, 6.1)]
-    dp2 = DiffractionPattern(diffpat=diffpat2)
+    dp2 = DiffractionPattern(diffpat=diffpat2, meta={"sort":True})
 
     assert is_all_equal(dp1.sort(in_place=False), dp2)
     assert is_all_equal(dp1, dp0)
@@ -155,7 +146,7 @@ def test_downsample():
     dp0 = copy.deepcopy(dp1)
     diffpat2 = [DiffractionDataPoint(5.01, (4.1 + 2.1 + 3.1) / 3, math.sqrt(4.1 + 2.1 + 3.1) / 3),
                 DiffractionDataPoint(5.04, (4.1 + 6.1 + 5.1) / 3, math.sqrt(4.1 + 6.1 + 5.1) / 3)]
-    dp2 = DiffractionPattern(diffpat=diffpat2)
+    dp2 = DiffractionPattern(diffpat=diffpat2, meta = {"downsample": 3})
 
     assert is_all_equal(dp1.downsample(3, in_place=False), dp2)
     assert is_all_equal(dp1, dp0)
@@ -180,8 +171,8 @@ def test_split_on_zero():
 
     diffpat = copy.deepcopy(diffpat2 + diffpat1)
     dp0 = DiffractionPattern(diffpat=diffpat)
-    dp1 = DiffractionPattern(diffpat=copy.deepcopy(diffpat1))
-    dp2 = DiffractionPattern(diffpat=copy.deepcopy(diffpat2))
+    dp1 = DiffractionPattern(diffpat=copy.deepcopy(diffpat1), meta={"split_on_zero": True, "trim": True})
+    dp2 = DiffractionPattern(diffpat=copy.deepcopy(diffpat2), meta={"split_on_zero": True, "trim": True})
     dp2.negate()
     dp2.reverse()
 
@@ -191,12 +182,16 @@ def test_split_on_zero():
     assert is_all_equal(dpn, dp2)  # the negative pattern is returned as the equivalent positive pattern
 
     dp0 = DiffractionPattern(diffpat=diffpat1)
+    dp1 = DiffractionPattern(diffpat=copy.deepcopy(diffpat1), meta={"split_on_zero": True})
     dpp, dpn = dp0.split_on_zero()
     # positive and negative values
     assert is_all_equal(dpp, dp1)
     assert dpn is None
 
     dp0 = DiffractionPattern(diffpat=diffpat2)
+    dp2 = DiffractionPattern(diffpat=copy.deepcopy(diffpat2), meta={"split_on_zero": True})
+    dp2.negate()
+    dp2.reverse()
     dpp, dpn = dp0.split_on_zero()
     # positive and negative values
     assert dpp is None
@@ -228,7 +223,7 @@ def test_average_with():
     dp0 = copy.deepcopy(dp1)
     dp2 = DiffractionPattern(diffpat=diffpat2)
     dp3 = DiffractionPattern(diffpat=diffpat3)
-    dp4 = DiffractionPattern(diffpat=diffpat4)
+    dp4 = DiffractionPattern(diffpat=diffpat4, meta={"average_with": 2})
 
     assert is_all_equal(dp1.average_with([dp2, dp3], in_place=False), dp4)
     assert is_all_equal(dp1, dp0)
@@ -250,7 +245,7 @@ def test_interpolate():
                 DiffractionDataPoint(5.02, 3.323940438, 1.829534893),
                 DiffractionDataPoint(5.03, 3.982959585, 2.009241527),
                 DiffractionDataPoint(5.04, 5.872433914, 2.419163642)]
-    dp2 = DiffractionPattern(diffpat=diffpat2)
+    dp2 = DiffractionPattern(diffpat=diffpat2, meta={"interpolate": 0.01})
 
     dp = dp1.interpolate(0.01, in_place=False)
     assert is_all_equal(dp, dp2)
