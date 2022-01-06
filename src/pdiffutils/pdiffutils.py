@@ -888,6 +888,28 @@ class DiffractionPattern:
             f0 = f0[0]
         return f0
 
+    def normalised_intensities(self) -> DiffractionPattern:
+        """
+        Construct a diffraction pattern such that the errors of the intensities are given by the sqrt
+        of the intensities.
+
+        i/sqrt(i) = I/E
+        sqrt(i) = I/E
+        i = (I/E)**2
+
+        This is purely for display purposes, and shows higher intensities where the intensities are better known.
+
+        :return: a DiffractionPattern where errors are the sqrt of the intensities
+        """
+        diffpat = [
+            DiffractionDataPoint(ddp.x, (ddp.y / ddp.e) ** 2, ddp.y / ddp.e)
+            for ddp in self.diffpat
+        ]
+
+        meta = copy.deepcopy(self.meta)
+        meta["normalised_intensities"] = True
+        return DiffractionPattern(diffpat=diffpat, filename=self.filename, meta=meta)
+
     def _add_sub(self, other: DiffractionPattern, op: operator) -> DiffractionPattern:
         """
         This function is used by __add__ and __and__ to allow for + and &
@@ -1308,7 +1330,7 @@ class DiffractionExperiment:
     It is essentially a list of DiffractionPatterns.
     """
 
-    def __init__(self, diffpats: List[DiffractionPattern] = None, filename: str = None, meta: dict = None):
+    def __init__(self, diffpats: List[DiffractionPattern] = None, filenames: List[str] = None, meta: dict = None):
         """
         Read in inital data in order to make everything.
         Angles must be strictly increasing
@@ -1316,15 +1338,21 @@ class DiffractionExperiment:
         Parameters
         ----------
         diffpats : an array of DiffractionPatterns
-        filename : a filename of a file that contains many diffraction patterns
+        filename : list of filenames
         meta: any information at all you wish to associate with the DiffractionExperiment
 
         Returns
         -------
         None.
         """
-        self.filename = filename or ""
-        self.diffpats = Read.read(filename) if diffpats is None else diffpats
+        if diffpats:
+            self.filenames = [dp.filename for dp in diffpats]
+        else:
+            self.filenames = filenames
+        if filenames:
+            self.diffpats = [DiffractionPattern(filename=filename) for filename in filenames]
+        else:
+            self.diffpats = diffpats
         self.meta = meta or {}
 
     def negate(self):
@@ -1412,15 +1440,17 @@ class DiffractionExperiment:
             dps = [dp.downsample(ds, in_place=False) for dp in self.diffpats]
             return DiffractionExperiment(diffpats=dps, filename=self.filename, meta=copy.deepcopy(self.meta))
 
-    def average_patterns(self, num: int, is_rolling: bool = True, in_place: bool = True, sum_instead: bool = False) -> None | DiffractionExperiment:
+    def average_patterns(self, num: int = None, is_rolling: bool = True, in_place: bool = True, sum_instead: bool = False) -> None | DiffractionExperiment:
         """
         Averages num patterns. If rolling average, then
         patterns 1..num are averaged, then 2..num+1, 3--num+2 and so on.
         If not rolling average, then 1..num, num+1..num+num and so on.
-        :param num: number of patterns to average
+        :param num: number of patterns to average. Defaults to averageing all patterns
         :param is_rolling: do a rolling average?
         :return:
         """
+        if num is None:
+            num = len(self)
         if num <= 1:
             raise ValueError("You need to average more than 1 dataset together.")
         if num > len(self):
@@ -1781,8 +1811,9 @@ class Write:
 
     @staticmethod
     def cif(dp: DiffractionPattern, filenamebase: str, dp_angle: int = 5,
-            data_block: str = "pdiffutils", x_type: str = "_pd_meas_2theta_scan", y_type: str = "_pd_meas_intensity_total",
-            other_dataitems: str = None) -> None:
+            data_block: str = "pdiffutils",
+            x_type: str = "_pd_meas_2theta_scan", y_type: str = "_pd_proc_intensity_total",
+            other_dataitems: str = "", append:bool = False) -> None:
         diffpat = dp.diffpat
         x_pad, _, _ = Write._get_padding(dp)
         ys = [val_err_str(y, e) for y, e in zip(dp.ys, dp.es)]
@@ -1791,9 +1822,12 @@ class Write:
             max_len_y = max(max_len_y, len(y))
 
         filename = filenamebase + ".cif"
-        with open(filename, "w") as f:
+
+        write_type = "a" if append else "w"
+        with open(filename, write_type) as f:
             print(f"Writing to {shrink_path_for_display(filename)}.")
-            f.write(f"data_{data_block}\n")
+            f.write(f"\ndata_{data_block}\n")
+            f.write(f"_pd_block_id\t{data_block}\n")
             if other_dataitems:
                 f.write(other_dataitems)
             f.write("\tloop_\n")
@@ -1805,12 +1839,16 @@ class Write:
 
     @staticmethod
     def cifs(de: DiffractionExperiment, filenamebase: str, dp_angle: int = 5,
-             data_blocks: str | List[str] = "pdiffutils",
+             data_blocks: str | List[str] = "",
              x_type: str = "_pd_meas_2theta_scan", y_type: str = "_pd_meas_intensity_total",
-             other_dataitems: str | List[str] = None) -> None:
+             other_dataitems: str | List[str] = "") -> None:
         pad = int(math.log10(len(de))) + 1
-        if other_dataitems is None:
-            other_dataitems = [None] * len(de)
+        if not other_dataitems:
+            other_dataitems = [""] * len(de)
+
+        if not data_blocks:
+            data_blocks = [dp.filename for dp in de.diffpats]
+
         if isinstance(data_blocks, list) and len(data_blocks) != len(de):
             raise ValueError(f"You gave {len(data_blocks)} data block names. You need {len(de)}.")
         if isinstance(other_dataitems, list) and len(other_dataitems) != len(de):
@@ -1820,9 +1858,9 @@ class Write:
         if isinstance(data_blocks, str):
             data_blocks = [f"{data_blocks}_{i:0{pad}}" for i in range(len(de))]
 
-        for i, dp, db, other in enumerate(zip(de.diffpats, data_blocks, other_dataitems)):
-            Write.cif(dp, f'{filenamebase}_{i:0{pad}}', dp_angle=dp_angle, data_block=db,
-                      x_type=x_type, y_type=y_type, other_dataitems=other)
+        for dp, db, other in zip(de.diffpats, data_blocks, other_dataitems):
+            Write.cif(dp, filenamebase, dp_angle=dp_angle, data_block=db,
+                      x_type=x_type, y_type=y_type, other_dataitems=other, append=True)
 
     @staticmethod
     def xyz(de: DiffractionExperiment, filenamebase: str,
@@ -1862,5 +1900,7 @@ class Write:
 
 def main():
     pass
+
+
 if __name__ == "__main__":
     main()
