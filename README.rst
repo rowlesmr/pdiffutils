@@ -39,9 +39,9 @@ Overview
     :alt: Supported implementations
     :target: https://pypi.org/project/pdiffutils
 
-.. |commits-since| image:: https://img.shields.io/github/commits-since/rowlesmr/pdiffutils/v0.0.2.svg
+.. |commits-since| image:: https://img.shields.io/github/commits-since/rowlesmr/pdiffutils/v0.0.3.svg
     :alt: Commits since latest release
-    :target: https://github.com/rowlesmr/pdiffutils/compare/v0.0.2...master
+    :target: https://github.com/rowlesmr/pdiffutils/compare/v0.0.3...master
 
 
 
