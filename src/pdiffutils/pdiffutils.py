@@ -481,6 +481,7 @@ class DiffractionPattern:
         -------
         None.
         """
+        self.filenamebase = os.path.splitext(filename)[0] or ""
         self.filename = filename or ""
         self.diffpat = Read.read(filename) if diffpat is None else diffpat
         self.meta = meta or {}
@@ -1345,14 +1346,8 @@ class DiffractionExperiment:
         -------
         None.
         """
-        if diffpats:
-            self.filenames = [dp.filename for dp in diffpats]
-        else:
-            self.filenames = filenames
-        if filenames:
-            self.diffpats = [DiffractionPattern(filename=filename) for filename in filenames]
-        else:
-            self.diffpats = diffpats
+        self.filenames = [dp.filename for dp in diffpats] if diffpats else filenames
+        self.diffpats = [DiffractionPattern(filename=filename) for filename in filenames] if filenames else diffpats
         self.meta = meta or {}
 
     def negate(self):
@@ -1411,7 +1406,7 @@ class DiffractionExperiment:
                 dp.trim(min_val, max_val)
         else:
             dps = [dp.trim(min_x, max_x, in_place=False) for dp, min_x, max_x in zip(self.diffpats, min_x, max_x)]
-            return DiffractionExperiment(diffpats=dps, filename=self.filename, meta=copy.deepcopy(self.meta))
+            return DiffractionExperiment(diffpats=dps, filenames=self.filenames, meta=copy.deepcopy(self.meta))
 
     def sort(self, in_place: bool = True) -> None | DiffractionExperiment:
         """
@@ -1422,7 +1417,7 @@ class DiffractionExperiment:
                 dp.sort()
         else:
             dps = [dp.sort(in_place=False) for dp in self.diffpats]
-            return DiffractionExperiment(diffpats=dps, filename=self.filename, meta=copy.deepcopy(self.meta))
+            return DiffractionExperiment(diffpats=dps, filenames=self.filenames, meta=copy.deepcopy(self.meta))
 
     def downsample(self, ds: int, in_place: bool = True) -> None | DiffractionExperiment:
         """
@@ -1438,7 +1433,7 @@ class DiffractionExperiment:
                 dp.downsample(ds)
         else:
             dps = [dp.downsample(ds, in_place=False) for dp in self.diffpats]
-            return DiffractionExperiment(diffpats=dps, filename=self.filename, meta=copy.deepcopy(self.meta))
+            return DiffractionExperiment(diffpats=dps, filenames=self.filenames, meta=copy.deepcopy(self.meta))
 
     def average_patterns(self, num: int = None, is_rolling: bool = True, in_place: bool = True, sum_instead: bool = False) -> None | DiffractionExperiment:
         """
@@ -1469,7 +1464,7 @@ class DiffractionExperiment:
         if in_place:
             self.diffpats[:] = dps
         else:
-            return DiffractionExperiment(diffpats=dps, filename=self.filename, meta=copy.deepcopy(self.meta))
+            return DiffractionExperiment(diffpats=dps, filenames=self.filenames, meta=copy.deepcopy(self.meta))
 
     def interpolate(self, step: float, in_place: bool = True) -> None | DiffractionExperiment:
         if in_place:
@@ -1477,7 +1472,7 @@ class DiffractionExperiment:
                 dp.interpolate(step, in_place=True)
         else:
             idps = [dp.interpolate(step, in_place=False) for dp in self.diffpats]
-            return DiffractionExperiment(diffpats=idps, filename=self.filename, meta=copy.deepcopy(self.meta))
+            return DiffractionExperiment(diffpats=idps, filenames=self.filenames, meta=copy.deepcopy(self.meta))
 
     def split_on_zero(self, remove_none_dps=False) -> tuple[DiffractionExperiment | None, DiffractionExperiment | None]:
         """
@@ -1501,8 +1496,8 @@ class DiffractionExperiment:
                 diffpats_p.append(dpp)
                 diffpats_n.append(dpn)
 
-        dep = DiffractionExperiment(diffpats=diffpats_p, filename=self.filename, meta=copy.deepcopy(self.meta)) if diffpats_p else None
-        den = DiffractionExperiment(diffpats=diffpats_n, filename=self.filename, meta=copy.deepcopy(self.meta)) if diffpats_n else None
+        dep = DiffractionExperiment(diffpats=diffpats_p, meta=copy.deepcopy(self.meta)) if diffpats_p else None
+        den = DiffractionExperiment(diffpats=diffpats_n, meta=copy.deepcopy(self.meta)) if diffpats_n else None
         return dep, den
 
 
@@ -1795,11 +1790,18 @@ class Write:
                     f.write(f"{a}{i}{e}\n")
 
     @staticmethod
-    def xyes(de: DiffractionExperiment, filenamebase: str,
+    def xyes(de: DiffractionExperiment, filenamebase: Union[str, List],
              dp_angle: int = 5, dp_intensity: int = 3, dp_error: int = 3, is_xy: bool = False):
-        pad = int(math.log10(len(de))) + 1
-        for i, dp in enumerate(de.diffpats):
-            Write.xye(dp, f'{filenamebase}_{i:0{pad}}', dp_angle=dp_angle, dp_intensity=dp_intensity, dp_error=dp_error, is_xy=is_xy)
+        if isinstance(filenamebase, str):
+            pad = int(math.log10(len(de))) + 1
+            for i, dp in enumerate(de.diffpats):
+                Write.xye(dp, f'{filenamebase}_{i:0{pad}}', dp_angle=dp_angle, dp_intensity=dp_intensity, dp_error=dp_error, is_xy=is_xy)
+        elif isinstance(filenamebase, list):
+            if len(filenamebase) != len(de):
+                raise ValueError(f"The number of filenames ({len(filenamebase)}) is not the same as the number of diffraction patterns ({len(de)}).")
+
+            for i, dp in enumerate(de.diffpats):
+                Write.xye(dp, f'{filenamebase[i]}', dp_angle=dp_angle, dp_intensity=dp_intensity, dp_error=dp_error, is_xy=is_xy)
 
     @staticmethod
     def xy(dp: DiffractionPattern, filenamebase: str, dp_angle: int = 5, dp_intensity: int = 3, dp_error: int = 3) -> None:
